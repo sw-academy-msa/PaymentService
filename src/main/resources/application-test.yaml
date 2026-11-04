@@ -1,0 +1,17 @@
+# 테스트는 개발 DB 대신 격리된 PostgreSQL을 주입합니다.
+payment:
+  messaging:
+    enabled: false
+  processing:
+    enabled: false
+  outbox:
+    publisher-enabled: false
+  toss:
+    enabled: false
+eureka:
+  client:
+    enabled: false
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop

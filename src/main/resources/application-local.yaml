@@ -1,0 +1,16 @@
+# 일반 PostgreSQL의 Payment 전용 논리 DB·계정·스키마를 사용합니다.
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/payment}
+    username: ${DB_USERNAME:payment}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
