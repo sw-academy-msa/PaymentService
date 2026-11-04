@@ -1,0 +1,94 @@
+# Payment는 자기 DB만 사용하며 Order Saga나 Product 재고를 소유하지 않습니다.
+spring:
+  application:
+    name: payment-service
+  profiles:
+    default: local
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19092}
+    consumer:
+      group-id: ${PAYMENT_CONSUMER_GROUP:payment-command-v1}
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      properties:
+        allow.auto.create.topics: false
+        max.partition.fetch.bytes: 4194304
+    listener:
+      ack-mode: record
+      auto-startup: ${PAYMENT_MESSAGING_ENABLED:false}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 2000
+        delivery.timeout.ms: 8000
+        request.timeout.ms: 3000
+        max.request.size: 4194304
+    admin:
+      auto-create: false
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        default_schema: payment
+        jdbc:
+          time_zone: UTC
+server:
+  port: ${SERVER_PORT:8084}
+  shutdown: graceful
+  forward-headers-strategy: none
+payment:
+  # 원본·Outbox 저장은 항상 수행하고 외부 처리·소비·발행만 명시적으로 활성화합니다.
+  messaging:
+    enabled: ${PAYMENT_MESSAGING_ENABLED:false}
+  processing:
+    enabled: ${PAYMENT_PROCESSING_ENABLED:false}
+  outbox:
+    publisher-enabled: ${PAYMENT_OUTBOX_PUBLISHER_ENABLED:false}
+  toss:
+    enabled: ${PAYMENT_TOSS_ENABLED:false}
+    secret-key: ${TOSS_SECRET_KEY:}
+    client-key: ${TOSS_CLIENT_KEY:}
+    base-url: https://api.tosspayments.com
+    request-timeout: 3s
+    allow-insecure-local: false
+  auth:
+    issuer: ${JWT_ISSUER:http://localhost:8080}
+    audience: ${JWT_AUDIENCE:stockdrop-api}
+    jwk-set-uri: ${ACCOUNT_JWKS_URI:http://localhost:8080/.well-known/jwks.json}
+eureka:
+  client:
+    enabled: ${EUREKA_CLIENT_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
+    healthcheck:
+      enabled: true
+  instance:
+    hostname: ${SERVICE_HOSTNAME:localhost}
+    instance-id: ${spring.application.name}:${SERVICE_INSTANCE_ID:${server.port}}
+    non-secure-port: ${SERVICE_PORT:${server.port}}
+    health-check-url-path: /actuator/health
+    status-page-url-path: /actuator/health
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+logging:
+  level:
+    # SQL 오류의 행 원문에 결제 데이터가 노출되지 않게 합니다.
+    org.hibernate.engine.jdbc.spi.SqlExceptionHelper: 'OFF'
