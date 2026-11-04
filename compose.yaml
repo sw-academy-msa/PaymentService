@@ -4,6 +4,9 @@ services:
   payment:
     build: .
     env_file: .env
+    # Linux 호스트 서비스도 Docker 브리지에서 접근 가능한 주소에 바인딩해야 합니다.
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     environment:
       DB_URL: jdbc:postgresql://host.docker.internal:5433/payment
       ACCOUNT_JWKS_URI: http://host.docker.internal:8080/.well-known/jwks.json

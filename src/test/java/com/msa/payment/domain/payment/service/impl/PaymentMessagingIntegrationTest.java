@@ -189,6 +189,11 @@ class PaymentMessagingIntegrationTest extends PaymentDatabaseTestSupport {
     @Autowired PaymentCommandService commands;
     @Autowired PaymentProcessor processor;
     @Autowired PaymentWorkStore store;
+
+    // 직접 발행을 검증하는 동안 초기 자동 실행이 같은 Outbox 행을 선점하지 않도록 격리합니다.
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.msa.payment.domain.outbox.scheduling.OutboxPublishJob automaticPublisher;
+
     @Autowired OutboxPublisher publisher;
     @Autowired JdbcTemplate jdbc;
     @Autowired TransactionTemplate tx;
@@ -311,6 +316,18 @@ class PaymentMessagingIntegrationTest extends PaymentDatabaseTestSupport {
                 .andExpect(
                         org.springframework.test.web.servlet.result.MockMvcResultMatchers.status()
                                 .isOk())
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                                        "$.success")
+                                .value(true))
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                                        "$.code")
+                                .value(com.msa.payment.global.response.SuccessCode.OK.code()))
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
+                                        "$.message")
+                                .value(com.msa.payment.global.response.SuccessCode.OK.message()))
                 .andExpect(
                         org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath(
                                         "$.data.clientKey")
@@ -539,6 +556,40 @@ class PaymentMessagingIntegrationTest extends PaymentDatabaseTestSupport {
                         Instant.parse("2030-01-01T00:06:00Z"),
                         false,
                         null);
+        // 재요청의 금액·결제키 변경도 원본을 보존하며 각각 거절합니다.
+        var original = command("APPROVE", 2);
+        var changedAmount =
+                new PaymentCommand(
+                        UUID.randomUUID(),
+                        1,
+                        "PAYMENT_COMMAND",
+                        "APPROVE",
+                        order,
+                        attempt,
+                        2,
+                        clock.instant(),
+                        6001,
+                        original.expiresAt(),
+                        false,
+                        key);
+        var changedKey =
+                new PaymentCommand(
+                        UUID.randomUUID(),
+                        1,
+                        "PAYMENT_COMMAND",
+                        "APPROVE",
+                        order,
+                        attempt,
+                        2,
+                        clock.instant(),
+                        6000,
+                        original.expiresAt(),
+                        false,
+                        "different-synthetic-payment-key");
+        assertThatThrownBy(() -> receive(changedAmount))
+                .isInstanceOf(com.msa.payment.domain.payment.InvalidPaymentCommandException.class);
+        assertThatThrownBy(() -> receive(changedKey))
+                .isInstanceOf(com.msa.payment.domain.payment.InvalidPaymentCommandException.class);
         assertThatThrownBy(() -> receive(changed))
                 .isInstanceOf(com.msa.payment.domain.payment.InvalidPaymentCommandException.class);
         assertThat(status()).isEqualTo("PENDING");

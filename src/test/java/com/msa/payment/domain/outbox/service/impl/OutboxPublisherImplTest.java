@@ -51,6 +51,10 @@ class OutboxPublisherImplTest extends PaymentDatabaseTestSupport {
         registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
     }
 
+    // 직접 발행을 검증하는 동안 초기 자동 실행이 같은 Outbox 행을 선점하지 않도록 격리합니다.
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.msa.payment.domain.outbox.scheduling.OutboxPublishJob automaticPublisher;
+
     @Autowired OutboxPublisher publisher;
     @Autowired JdbcTemplate jdbc;
     @Autowired TransactionTemplate tx;
@@ -176,6 +180,11 @@ class OutboxPublisherImplTest extends PaymentDatabaseTestSupport {
                             jdbc.queryForObject(
                                     "select attempts from payment.outbox_events", Integer.class))
                     .isEqualTo(1);
+            assertThat(
+                            jdbc.queryForObject(
+                                    "select published_at is not null from payment.outbox_events",
+                                    Boolean.class))
+                    .isTrue();
         } finally {
             pool.shutdownNow();
         }

@@ -61,7 +61,14 @@ public class PaymentWorkStoreImpl implements PaymentWorkStore {
 
     public void complete(PaymentWork work, ProviderReply reply) {
         var a = attempts.lock(work.attemptId()).orElse(null);
-        if (a == null || !Objects.equals(a.leaseToken, work.leaseToken())) return;
+        if (a == null
+                || !Objects.equals(a.leaseToken, work.leaseToken())
+                || a.leaseUntil == null
+                || !clock.instant().isBefore(a.leaseUntil)) return;
+        // 만료된 작업 결과는 버리고 새 임대 작업이 같은 멱등 키로 복구하도록 합니다.
+        var previousStatus = a.status;
+        var previousApprovedAt = a.approvedAt;
+        var previousFailureCode = a.lastFailureCode;
         // 승인 원본은 불명·실패로 역행시키지 않습니다. 취소는 Order의 영속 보상 의도가 있을 때만 반영합니다.
         boolean permitted =
                 a.status != Status.APPROVED
@@ -81,6 +88,11 @@ public class PaymentWorkStoreImpl implements PaymentWorkStore {
         a.nextAttemptAt = clock.instant().plusSeconds(Math.min(60, 1L << Math.min(6, a.attempts)));
         if (a.cancellationRequested && a.status == Status.APPROVED)
             a.nextAttemptAt = clock.instant().plusSeconds(2);
-        results.record(a);
+        // 재조회가 같은 UNKNOWN을 반복할 때 결과 버전·Outbox를 불필요하게 늘리지 않습니다.
+        if (previousStatus != a.status
+                || !Objects.equals(previousApprovedAt, a.approvedAt)
+                || !Objects.equals(previousFailureCode, a.lastFailureCode)) {
+            results.record(a);
+        }
     }
 }

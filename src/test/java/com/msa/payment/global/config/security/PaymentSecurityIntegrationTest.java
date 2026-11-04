@@ -21,6 +21,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class PaymentSecurityIntegrationTest {
+    static final JwtTestIssuer ISSUER = new JwtTestIssuer();
     static final PostgreSQLContainer DB =
             new PostgreSQLContainer("postgres:17-alpine")
                     .withDatabaseName("payment")
@@ -33,11 +34,18 @@ class PaymentSecurityIntegrationTest {
 
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry props) {
+        props.add("payment.auth.jwk-set-uri", ISSUER::uri);
         props.add("spring.datasource.url", DB::getJdbcUrl);
         props.add("spring.datasource.username", DB::getUsername);
         props.add("spring.datasource.password", DB::getPassword);
     }
 
+    @org.junit.jupiter.api.AfterAll
+    static void stopIssuer() {
+        ISSUER.close();
+    }
+
+    @Autowired org.springframework.core.env.ConfigurableEnvironment environment;
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired TransactionTemplate tx;
@@ -77,6 +85,19 @@ class PaymentSecurityIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    /** 메서드가 달라도 BUYER 권한 경계가 유지됩니다. */
+    @Test
+    void sellerGetIsForbiddenAndBuyerPostReachesUnimplementedPath() throws Exception {
+        mvc.perform(
+                        get("/api/v1/payments")
+                                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_SELLER"))))
+                .andExpect(status().isForbidden());
+        mvc.perform(
+                        post("/api/v1/payments")
+                                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_BUYER"))))
+                .andExpect(status().isNotFound());
+    }
+
     @Test
     void unimplementedInternalAndManagementPathsAreClosed() throws Exception {
         for (var path :
@@ -88,6 +109,41 @@ class PaymentSecurityIntegrationTest {
             mvc.perform(get(path).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_BUYER"))))
                     .andExpect(status().isForbidden());
         }
+    }
+
+    /** 실제 서명 토큰이 디코더와 roles 변환기를 거쳐 BUYER 인가를 통과해야 합니다. */
+    @Test
+    void signedRolesAreConvertedByConfiguredSecurityChain() throws Exception {
+        for (String role : java.util.List.of("BUYER", "SELLER")) {
+            var now = java.time.Instant.now();
+            var claims =
+                    org.springframework.security.oauth2.jwt.JwtClaimsSet.builder()
+                            .issuer(environment.getRequiredProperty("payment.auth.issuer"))
+                            .audience(
+                                    java.util.List.of(
+                                            environment.getRequiredProperty(
+                                                    "payment.auth.audience")))
+                            .subject(java.util.UUID.randomUUID().toString())
+                            .issuedAt(now.minusSeconds(1))
+                            .expiresAt(now.plusSeconds(300))
+                            .claim("token_use", "access")
+                            .claim("roles", java.util.List.of(role))
+                            .build();
+            var result =
+                    mvc.perform(
+                            get("/api/v1/payments")
+                                    .header("Authorization", "Bearer " + ISSUER.token(claims)));
+            result.andExpect(role.equals("BUYER") ? status().isNotFound() : status().isForbidden());
+        }
+    }
+
+    /** 테스트 프로필은 로컬 비밀 파일을 읽지 않고 격리 설정으로 시작합니다. */
+    @Test
+    void testProfileDoesNotImportLocalEnv() {
+        assertThat(
+                        environment.getPropertySources().stream()
+                                .map(org.springframework.core.env.PropertySource::getName))
+                .noneMatch(name -> name.contains(".env"));
     }
 
     @Test

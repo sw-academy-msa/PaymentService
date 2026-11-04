@@ -2,13 +2,17 @@
     "openapi":  "3.1.0",
     "info":  {
                  "title":  "STOCKDROP Payment",
-                 "description":  "ê³µê° APIë BUYERì SDK í´ë¼ì´ì¸í¸ í¤ ì¡°íì\u0085ëë¤. í\u0085ì¤í¸ ê²°ì  ì¹ì¸Â·ì¡°íÂ·ë³´ìì Order ì ì© Kafka ëª\u0085ë ¹ì¼ë¡ ì²ë¦¬í©ëë¤.",
+                 "description":  "공개 API는 BUYER의 SDK 클라이언트 키 조회입니다. 테스트 결제 승인·조회·보상은 Order 전용 Kafka 명령으로 처리합니다.",
                  "version":  "v1"
              },
     "servers":  [
                     {
+                        "url":  "http://localhost:8000",
+                        "description":  "일반 Gateway"
+                    },
+                    {
                         "url":  "http://localhost:8084",
-                        "description":  "Generated server url"
+                        "description":  "로컬 개발 서비스"
                     }
                 ],
     "security":  [
@@ -29,11 +33,11 @@
                                                                                               "200":  {
                                                                                                           "description":  "OK",
                                                                                                           "content":  {
-                                                                                                                          "*/*":  {
-                                                                                                                                      "schema":  {
-                                                                                                                                                     "$ref":  "#/components/schemas/ApiResponseClientConfigurationResponse"
-                                                                                                                                                 }
-                                                                                                                                  }
+                                                                                                                          "application/json":  {
+                                                                                                                                                   "schema":  {
+                                                                                                                                                                  "$ref":  "#/components/schemas/ApiResponseClientConfigurationResponse"
+                                                                                                                                                              }
+                                                                                                                                               }
                                                                                                                       }
                                                                                                       }
                                                                                           }
@@ -42,14 +46,6 @@
               },
     "components":  {
                        "schemas":  {
-                                       "ClientConfigurationResponse":  {
-                                                                           "type":  "object",
-                                                                           "properties":  {
-                                                                                              "clientKey":  {
-                                                                                                                "type":  "string"
-                                                                                                            }
-                                                                                          }
-                                                                       },
                                        "ApiResponseClientConfigurationResponse":  {
                                                                                       "type":  "object",
                                                                                       "properties":  {
@@ -66,7 +62,15 @@
                                                                                                                       "$ref":  "#/components/schemas/ClientConfigurationResponse"
                                                                                                                   }
                                                                                                      }
-                                                                                  }
+                                                                                  },
+                                       "ClientConfigurationResponse":  {
+                                                                           "type":  "object",
+                                                                           "properties":  {
+                                                                                              "clientKey":  {
+                                                                                                                "type":  "string"
+                                                                                                            }
+                                                                                          }
+                                                                       }
                                    },
                        "securitySchemes":  {
                                                "bearerAuth":  {

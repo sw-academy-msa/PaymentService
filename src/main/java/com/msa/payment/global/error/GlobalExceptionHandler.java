@@ -73,6 +73,15 @@ public class GlobalExceptionHandler {
         return response(CommonErrorCode.UNSUPPORTED_MEDIA_TYPE);
     }
 
+    /** Accept 협상이 실패해도 JSON 오류 응답을 기록할 수 있도록 형식을 명시합니다. */
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotAcceptableException.class)
+    public ResponseEntity<ErrorResponse> notAcceptable(Exception exception) {
+        return ResponseEntity.status(CommonErrorCode.NOT_ACCEPTABLE.status())
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .header("Cache-Control", "no-store")
+                .body(ErrorResponse.of(CommonErrorCode.NOT_ACCEPTABLE, MDC.get("traceId")));
+    }
+
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ErrorResponse> optimistic(Exception exception) {
         return response(CommonErrorCode.OPTIMISTIC_LOCK_CONFLICT);

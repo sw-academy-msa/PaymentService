@@ -21,7 +21,7 @@ public class PaymentConfigurationController {
         this.props = props;
     }
 
-    @GetMapping("/client-configuration")
+    @GetMapping(value = "/client-configuration", produces = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize("hasRole('BUYER')")
     public ResponseEntity<ApiResponse<ClientConfigurationResponse>> configuration() {
         if (!props.enabled()) throw new PaymentException(PaymentErrorCode.SERVICE_UNAVAILABLE);

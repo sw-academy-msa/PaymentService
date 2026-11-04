@@ -18,7 +18,11 @@ import java.util.UUID;
 @EnableConfigurationProperties(AuthProperties.class)
 public class JwtConfig {
     @Bean
-    public JwtDecoder jwtDecoder(AuthProperties properties, Clock clock) {
+    public JwtDecoder jwtDecoder(
+            AuthProperties properties,
+            Clock clock,
+            org.springframework.core.env.Environment environment) {
+        properties.validate(environment);
         // issuer discovery 없이 시작하며 실제 서명 검증 시 JWKS 공개키만 조회합니다.
         var decoder =
                 NimbusJwtDecoder.withJwkSetUri(properties.jwkSetUri())
@@ -34,7 +38,8 @@ public class JwtConfig {
         timestamp.setClock(clock);
         OAuth2TokenValidator<Jwt> audience =
                 jwt ->
-                        jwt.getAudience().contains(properties.audience())
+                        jwt.getAudience() != null
+                                        && jwt.getAudience().contains(properties.audience())
                                 ? OAuth2TokenValidatorResult.success()
                                 : invalid();
         return new DelegatingOAuth2TokenValidator<>(

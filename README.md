@@ -29,6 +29,7 @@ KAFKA_BOOTSTRAP_SERVERS=localhost:19092
 
 - [Order·Kafka·토스와 프론트 연결 계약](contracts/payment-flow.md)
 - [공개 HTTP API 스냅샷](openapi/payment.openapi.json): 실제 컨트롤러에서 생성하며 Kafka 명령은 별도 계약을 따릅니다.
+- OpenAPI 기본 서버는 일반 Gateway인 http://localhost:8000이며 운영 주소는 payment.openapi.gateway-base-url 설정으로 주입합니다. http://localhost:8084는 별도 개발 서버입니다.
 - 원본 테이블은 엔티티로 관리하며 별도 운영용 `ops/sql`은 없습니다. DB·계정·스키마를 만드는 로컬 초기화는 업무 테이블 생성과 별개입니다.
 - 토스 타임아웃·404·불명 응답은 결제 실패로 확정하지 않습니다. 기한이 지난 뒤에는 새 승인을 하지 않으며 기존 승인 여부를 조회합니다.
 - 소비자 중복·순서 역전, 서버 재시작, 승인/취소 응답 유실은 영속 상태·멱등 키·재조회로 복구합니다. 단일 Kafka 디스크 유실까지 무손실을 보장하는 구성은 아닙니다.

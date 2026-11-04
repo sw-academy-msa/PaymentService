@@ -1,7 +1,5 @@
 # Payment는 자기 DB만 사용하며 Order Saga나 Product 재고를 소유하지 않습니다.
 spring:
-  config:
-    import: optional:file:./.env[.properties]
   application:
     name: payment-service
   profiles:

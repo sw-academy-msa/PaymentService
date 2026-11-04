@@ -87,7 +87,14 @@ class JwtConfigTest {
 
     @Test
     void decoderCreationDoesNotContactAccount() {
-        assertThat(new JwtConfig().jwtDecoder(PROPERTIES, Clock.systemUTC())).isNotNull();
+        assertThat(
+                        new JwtConfig()
+                                .jwtDecoder(
+                                        PROPERTIES,
+                                        Clock.systemUTC(),
+                                        new org.springframework.mock.env.MockEnvironment()
+                                                .withProperty("spring.profiles.active", "test")))
+                .isNotNull();
     }
 
     @Test
@@ -101,6 +108,52 @@ class JwtConfigTest {
                 .isInstanceOf(JwtException.class);
         assertThat(decoder.decode(token(claims().claim("principal_type", "user"), signingKey)))
                 .isNotNull();
+    }
+
+    /** 구성 빈의 실제 JWKS 디코더에도 claim 검증기가 연결되어 있어야 합니다. */
+    @Test
+    void configuredDecoderValidatesClaimsAfterVerifyingRealSignature() {
+        try (var issuer = new JwtTestIssuer()) {
+            var environment = new org.springframework.mock.env.MockEnvironment();
+            environment.setActiveProfiles("test");
+            var properties =
+                    new AuthProperties(PROPERTIES.issuer(), PROPERTIES.audience(), issuer.uri());
+            var configured =
+                    new JwtConfig()
+                            .jwtDecoder(properties, Clock.fixed(NOW, ZoneOffset.UTC), environment);
+            assertThat(configured.decode(issuer.token(claims().build()))).isNotNull();
+            for (var invalid :
+                    List.of(
+                            claims().issuer("https://wrong.test"),
+                            claims().audience(List.of("wrong")),
+                            claims().claim("token_use", "refresh"),
+                            claims().claims(values -> values.remove("aud")))) {
+                assertThatThrownBy(() -> configured.decode(issuer.token(invalid.build())))
+                        .isInstanceOf(JwtException.class);
+            }
+        }
+    }
+
+    /** 로컬·테스트만 HTTP를 허용하고 프로필이 없거나 운영이면 HTTPS를 요구합니다. */
+    @Test
+    void startupRequiresHttpsOutsideLocalAndTest() {
+        for (String profile : List.of("local", "test")) {
+            var env = new org.springframework.mock.env.MockEnvironment();
+            env.setActiveProfiles(profile);
+            assertThat(new JwtConfig().jwtDecoder(PROPERTIES, Clock.systemUTC(), env)).isNotNull();
+        }
+        for (String profile : List.of("prod", "staging", "default")) {
+            var env = new org.springframework.mock.env.MockEnvironment();
+            env.setActiveProfiles(profile);
+            assertThatThrownBy(() -> new JwtConfig().jwtDecoder(PROPERTIES, Clock.systemUTC(), env))
+                    .isInstanceOf(IllegalStateException.class);
+            var secure =
+                    new AuthProperties(
+                            PROPERTIES.issuer(),
+                            PROPERTIES.audience(),
+                            "https://account.test/jwks");
+            assertThat(new JwtConfig().jwtDecoder(secure, Clock.systemUTC(), env)).isNotNull();
+        }
     }
 
     private static JwtClaimsSet.Builder claims() {

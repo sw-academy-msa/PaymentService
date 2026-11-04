@@ -9,4 +9,13 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties("payment.auth")
 public record AuthProperties(
-        @NotBlank String issuer, @NotBlank String audience, @NotBlank String jwkSetUri) {}
+        @NotBlank String issuer, @NotBlank String audience, @NotBlank String jwkSetUri) {
+    /** 프로필을 아는 구성 단계에서 호출하며 운영 키 조회의 평문 통신을 차단합니다. */
+    public void validate(org.springframework.core.env.Environment environment) {
+        if (!environment.acceptsProfiles(
+                        org.springframework.core.env.Profiles.of("(local | test) & !prod"))
+                && !"https".equalsIgnoreCase(java.net.URI.create(jwkSetUri).getScheme())) {
+            throw new IllegalStateException("로컬·테스트 외의 JWKS 주소는 HTTPS여야 합니다.");
+        }
+    }
+}

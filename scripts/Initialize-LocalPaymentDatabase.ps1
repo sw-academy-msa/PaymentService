@@ -11,8 +11,11 @@ if (Test-Path -LiteralPath $envPath) {
     $original = [IO.File]::ReadAllText($envPath)
     $match = [regex]::Matches($original,'(?m)^DB_PASSWORD=([^\r\n]+)')
     if ($match.Count -ne 1) { throw '기존 비밀번호를 안전하게 식별하지 못해 변경하지 않습니다.' }
-    if ($original -notmatch '(?m)^DB_USERNAME=payment\r?$') { throw '다른 DB 계정 설정이 있어 변경하지 않습니다.' }
+    $usernames = [regex]::Matches($original,'(?m)^DB_USERNAME=([^\r\n]*)\r?$')
+    if ($usernames.Count -ne 1 -or $usernames[0].Groups[1].Value -ne 'payment') { throw '다른 DB 계정 설정이 있어 변경하지 않습니다.' }
     $password = $match[0].Groups[1].Value
+    # 공개된 예제 비밀번호로 역할을 생성하거나 기존 역할의 비밀번호를 변경하지 않습니다.
+    if ($password -eq 'replace-with-generated-local-secret') { throw '예제 비밀번호를 실제 Payment 비밀번호로 설정해야 합니다.' }
 } else {
     $bytes = New-Object byte[] 32
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
@@ -36,6 +39,10 @@ BEGIN
         AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR NOT rolcanlogin)) THEN
         RAISE EXCEPTION '기존 Payment 역할의 권한이 예상과 다릅니다.';
     END IF;
+    -- NOINHERIT만으로 다른 역할로의 SET ROLE을 막을 수 없어 기존 멤버십도 거절합니다.
+    IF EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.member WHERE r.rolname = 'payment') THEN
+        RAISE EXCEPTION '기존 Payment 역할의 권한이 예상과 다릅니다.';
+    END IF;
     IF EXISTS (SELECT 1 FROM pg_database WHERE datname = 'payment' AND pg_get_userbyid(datdba) <> current_user) THEN
         RAISE EXCEPTION '기존 Payment DB 소유권이 예상과 다릅니다.';
     END IF;
@@ -44,6 +51,9 @@ SELECT NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'payment') AS create_r
 \if :create_role
 CREATE ROLE payment LOGIN PASSWORD :'payment_password'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+\else
+-- 로컬 재실행 시 .env와 역할 자격증명을 동기화합니다. 운영 DB에는 실행하지 않습니다.
+ALTER ROLE payment PASSWORD :'payment_password';
 \endif
 COMMIT;
 SELECT NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'payment') AS create_database \gset
