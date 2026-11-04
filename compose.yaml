@@ -1,0 +1,24 @@
+# 앱만 실행합니다. DB는 기존 일반 PostgreSQL을 공유하고 별도 인스턴스를 추가하지 않습니다.
+name: stockdrop-payment
+services:
+  payment:
+    build: .
+    env_file: .env
+    environment:
+      DB_URL: jdbc:postgresql://host.docker.internal:5433/payment
+      ACCOUNT_JWKS_URI: http://host.docker.internal:8080/.well-known/jwks.json
+      EUREKA_DEFAULT_ZONE: http://host.docker.internal:8761/eureka/
+      SERVICE_HOSTNAME: ${SERVICE_HOSTNAME:-localhost}
+      SERVICE_PORT: "8084"
+      # 컨테이너는 INTERNAL listener로 접속해 localhost 광고 주소를 받지 않습니다.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "127.0.0.1:8084:8084"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    networks:
+      - shared-kafka
+networks:
+  shared-kafka:
+    external: true
+    name: stockdrop-query-kafka_default
