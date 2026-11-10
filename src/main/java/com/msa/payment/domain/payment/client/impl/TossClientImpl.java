@@ -19,6 +19,17 @@ import java.util.*;
 /** 주문서형/결제창 키가 지원하는 paymentKey 조회를 사용합니다. 원문 오류·인증 헤더는 로그에 남기지 않습니다. */
 @Component
 public class TossClientImpl implements TossClient {
+    // 결제 자체를 거절했다는 의미의 HTTP 상태입니다. 인증·충돌·요청 제한·서버 오류는 포함하지 않습니다.
+    private static final Set<Integer> REJECTION_STATUSES = Set.of(400, 403, 404);
+    // 이미 승인됐거나 공급자 내부 처리 결과를 알 수 없는 코드는 거절로 확정하지 않고 재조회합니다.
+    private static final Set<String> UNSETTLED_CODES =
+            Set.of(
+                    "ALREADY_PROCESSED_PAYMENT",
+                    "PROVIDER_ERROR",
+                    "FAILED_PAYMENT_INTERNAL_SYSTEM_PROCESSING",
+                    "FAILED_INTERNAL_SYSTEM_PROCESSING",
+                    "UNKNOWN_PAYMENT_ERROR");
+
     private final HttpClient http;
     private final TossProperties props;
     private final JsonMapper json;
@@ -39,6 +50,11 @@ public class TossClientImpl implements TossClient {
             if (work.firstApproval() && canApprove(work)) return approved(work);
             var response = request("GET", "/v1/payments/" + path(work.paymentKey()), null, null);
             if (response.statusCode() == 404 && canApprove(work)) return approved(work);
+            // 승인 기한 이후 조회 404는 승인된 결제가 없다는 확정 응답이므로 거절로 확정하고 재고를 반환하게 합니다.
+            if (response.statusCode() == 404
+                    && "NOT_FOUND_PAYMENT".equals(rejectionCode(response))) {
+                return declined(work, "NOT_FOUND_PAYMENT");
+            }
             var body = validated(response, work);
             if (body == null) return ProviderReply.unknown("PROVIDER_RESULT_UNKNOWN");
             String status = (String) body.get("status");
@@ -82,7 +98,39 @@ public class TossClientImpl implements TossClient {
                                 work.amount()),
                         "stockdrop-approve-" + work.attemptId());
         var body = validated(response, work);
-        return body == null ? ProviderReply.unknown("APPROVAL_RESULT_UNKNOWN") : reply(body, work);
+        if (body != null) return reply(body, work);
+        // 토스가 승인 거절을 명시한 오류만 확정하고, 처리 여부가 불명확한 응답은 영속 재조회로 남깁니다.
+        String rejection = rejectionCode(response);
+        return rejection == null
+                ? ProviderReply.unknown("APPROVAL_RESULT_UNKNOWN")
+                : declined(work, rejection);
+    }
+
+    /** 토스 오류 응답이 이 결제를 승인하지 않았다는 확정 응답일 때만 오류 코드를 반환합니다. */
+    private String rejectionCode(HttpResponse<byte[]> response) {
+        if (!REJECTION_STATUSES.contains(response.statusCode())
+                || response.body() == null
+                || response.body().length > 65536) return null;
+        try {
+            Map<?, ?> body = json.readValue(response.body(), Map.class);
+            // 저장 컬럼(64자)과 로그 안전성을 위해 토스 형식의 대문자 코드만 허용합니다.
+            if (!(body.get("code") instanceof String code) || !code.matches("[A-Z0-9_]{1,58}")) {
+                return null;
+            }
+            return UNSETTLED_CODES.contains(code) ? null : code;
+        } catch (Exception failure) {
+            return null;
+        }
+    }
+
+    // 승인되지 않은 결제이므로 승인 시각 없이 거절로 확정하며 원문 메시지는 보관하지 않습니다.
+    private ProviderReply declined(PaymentWork work, String code) {
+        return ProviderReply.builder()
+                .status(Status.DECLINED)
+                .approvedAt(null)
+                .paymentKey(work.paymentKey())
+                .failureCode("TOSS_" + code)
+                .build();
     }
 
     private HttpResponse<byte[]> request(
@@ -150,7 +198,7 @@ public class TossClientImpl implements TossClient {
                             .paymentKey(work.paymentKey())
                             .failureCode(null)
                             .build();
-            // 404·부분취소·입금대기·진행 중은 실패 확정이나 임의 재고 반환의 근거가 아닙니다.
+            // 부분취소·입금대기·진행 중은 실패 확정이나 임의 재고 반환의 근거가 아닙니다. 404는 호출부에서 판정합니다.
             default -> ProviderReply.unknown("PROVIDER_PENDING");
         };
     }
