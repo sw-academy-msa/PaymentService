@@ -11,6 +11,12 @@ import java.util.*;
 
 /** 발행 대상 선택과 PostgreSQL 잠금 SQL을 캡슐화합니다. 결과는 관리 엔티티이므로 변경 감지로 저장합니다. */
 public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> {
+    /** 원본 payload 없이 해당 서비스 소유 Outbox의 미발행 집계만 읽습니다. */
+    @org.springframework.data.jpa.repository.Query(
+            "select count(e) as pending, min(e.createdAt) as oldest from OutboxEvent e where"
+                + " e.publishedAt is null")
+    com.msa.payment.domain.outbox.dto.response.OutboxMetricsSnapshot monitoringSnapshot();
+
     @Transactional(propagation = Propagation.MANDATORY)
     @Query(
             value =
