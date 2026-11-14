@@ -12,7 +12,13 @@ import java.util.UUID;
 @Table(
         name = "payment_attempts",
         schema = "payment",
-        indexes = @Index(name = "idx_payment_work", columnList = "nextAttemptAt,leaseUntil"))
+        indexes = {
+            @Index(name = "idx_payment_work", columnList = "nextAttemptAt,leaseUntil"),
+            // 복구 작업이 처리 대상 상태만 찾습니다. 종료된 결제도 재시도 시각이 남아 있어 시각만으로는 걸러지지 않습니다.
+            @Index(
+                    name = "idx_payment_due",
+                    columnList = "status,cancellationRequested,nextAttemptAt")
+        })
 public class PaymentAttempt {
     /** 빌더에 담긴 개인정보·결제키·토큰·이벤트 본문을 로그에 노출하지 않습니다. */
     public static class PaymentAttemptBuilder {
