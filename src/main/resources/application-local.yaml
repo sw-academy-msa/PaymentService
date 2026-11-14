@@ -7,6 +7,10 @@ spring:
     username: ${DB_USERNAME:payment}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+  flyway:
+    # Flyway 도입 전 update로 만든 기존 개발 DB는 V1을 실행하지 않고 적용된 것으로 기록합니다. 빈 DB에서는 V1부터 실행합니다.
+    baseline-on-migrate: true
+    baseline-version: 1
   jpa:
     hibernate:
       ddl-auto: update

@@ -4,6 +4,12 @@ spring:
     name: payment-service
   profiles:
     default: local
+  # 테이블 변경은 db/migration의 버전 SQL로 관리합니다.
+  flyway:
+    locations: classpath:db/migration
+    default-schema: payment
+    schemas: payment
+    create-schemas: true
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19092}
     consumer:
