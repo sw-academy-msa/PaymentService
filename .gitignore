@@ -1,0 +1,16 @@
+# 실제 환경·키·생성 결과는 저장소에 포함하지 않습니다.
+.gradle/
+build/
+.idea/
+.vscode/
+*.iml
+.env
+.env.*
+!.env.example
+.secrets/
+.keys/
+logs/
+*.log
+# 기존 서비스의 상세 문서 관리 규칙을 유지합니다.
+/docs/
+/AGENTS.md

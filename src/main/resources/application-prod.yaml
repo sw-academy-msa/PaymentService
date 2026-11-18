@@ -1,0 +1,27 @@
+# 운영은 RDS 접속 정보를 주입하고 준비된 테이블을 검증만 합니다.
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:3000}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+payment:
+  auth:
+    issuer: ${JWT_ISSUER}
+    audience: ${JWT_AUDIENCE}
+    jwk-set-uri: ${ACCOUNT_JWKS_URI}
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE}
+  instance:
+    hostname: ${SERVICE_HOSTNAME}
+    instance-id: ${spring.application.name}:${SERVICE_INSTANCE_ID}
+    non-secure-port: ${SERVICE_PORT}
