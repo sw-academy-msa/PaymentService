@@ -26,5 +26,5 @@ jobs:
     uses: sw-academy-msa/Infra/.github/workflows/deploy-service.yaml@main
     with:
       service: payment-service
-      pool: general
+      pool: query
       aws_account_id: ${{ vars.AWS_ACCOUNT_ID }}
