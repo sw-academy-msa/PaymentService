@@ -17,6 +17,8 @@ import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /** 빌링 완료 웹훅 없이 승인 응답과 조회로 복구하며 원문 URI와 공급자 오류는 로그에 남기지 않습니다. */
 @Component
@@ -168,7 +170,14 @@ public class BillingClientImpl implements BillingClient {
                     .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(payload)));
         } else if ("DELETE".equals(method)) request.DELETE();
         else request.GET();
-        return http.send(request.build(), HttpResponse.BodyHandlers.ofByteArray());
+        var exchange = http.sendAsync(request.build(), HttpResponse.BodyHandlers.ofByteArray());
+        try {
+            return exchange.get(properties.requestTimeout().toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException | InterruptedException failure) {
+            // 본문 수신까지 제한하고 원본 교환을 취소해 임대시간 안에 복구합니다.
+            exchange.cancel(true);
+            throw failure;
+        }
     }
 
     private Map<?, ?> body(HttpResponse<byte[]> response) {

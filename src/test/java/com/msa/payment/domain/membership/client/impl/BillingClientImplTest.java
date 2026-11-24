@@ -17,6 +17,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /** 기존 JDK 합성 서버 방식으로 멱등 전송과 승인 불명/거절/조회/발급/삭제를 검증합니다. */
 class BillingClientImplTest {
@@ -86,6 +88,47 @@ class BillingClientImplTest {
                 + ",\"balanceAmount\":"
                 + amount
                 + ",\"paymentKey\":\"fixture-payment\",\"approvedAt\":\"2026-11-25T09:00:00+09:00\"}";
+    }
+
+    @Test
+    void timesOutWhenHeadersArriveButBodyStalls() throws Exception {
+        var release = new CountDownLatch(1);
+        server.removeContext("/");
+        server.createContext(
+                "/",
+                exchange -> {
+                    exchange.getRequestBody().readAllBytes();
+                    exchange.sendResponseHeaders(200, 100);
+                    exchange.getResponseBody().write('{');
+                    exchange.getResponseBody().flush();
+                    try {
+                        release.await(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException failure) {
+                        Thread.currentThread().interrupt();
+                    } finally {
+                        exchange.close();
+                    }
+                });
+        var props =
+                new BillingProperties(
+                        true,
+                        "test_ck_fixture",
+                        "test_sk_fixture",
+                        URI.create("http://127.0.0.1:" + server.getAddress().getPort()),
+                        Duration.ofMillis(250),
+                        true);
+        client =
+                new BillingClientImpl(
+                        HttpClient.newHttpClient(), props, JsonMapper.builder().build());
+        try {
+            org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                    Duration.ofSeconds(3),
+                    () ->
+                            assertThat(client.charge("fixture-billing", charge).status())
+                                    .isEqualTo(Status.UNKNOWN));
+        } finally {
+            release.countDown();
+        }
     }
 
     @Test
