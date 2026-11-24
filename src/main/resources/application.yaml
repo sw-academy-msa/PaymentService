@@ -68,12 +68,17 @@ payment:
     jwk-set-uri: ${ACCOUNT_JWKS_URI:http://localhost:8080/.well-known/jwks.json}
 eureka:
   client:
+    # 서버에서 제거된 인스턴스를 5초 주기로 반영합니다.
+    registry-fetch-interval-seconds: 5
     enabled: ${EUREKA_CLIENT_ENABLED:true}
     service-url:
       defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
     healthcheck:
       enabled: true
   instance:
+    # heartbeat 3회 누락에 해당하는 30초 후 만료 대상으로 판단합니다.
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
     hostname: ${SERVICE_HOSTNAME:localhost}
     instance-id: ${spring.application.name}:${SERVICE_INSTANCE_ID:${server.port}}
     non-secure-port: ${SERVICE_PORT:${server.port}}
