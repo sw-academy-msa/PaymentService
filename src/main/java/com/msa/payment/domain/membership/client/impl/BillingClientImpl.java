@@ -170,13 +170,53 @@ public class BillingClientImpl implements BillingClient {
                     .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(payload)));
         } else if ("DELETE".equals(method)) request.DELETE();
         else request.GET();
-        var exchange = http.sendAsync(request.build(), HttpResponse.BodyHandlers.ofByteArray());
+        var exchange = http.sendAsync(request.build(), info -> new LimitedBodySubscriber());
         try {
             return exchange.get(properties.requestTimeout().toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException | InterruptedException failure) {
             // 본문 수신까지 제한하고 원본 교환을 취소해 임대시간 안에 복구합니다.
             exchange.cancel(true);
             throw failure;
+        }
+    }
+
+    /** 수신 중 상한을 검사해 공급자 본문이 힙을 무제한 사용하지 못하게 합니다. */
+    private static final class LimitedBodySubscriber
+            implements HttpResponse.BodySubscriber<byte[]> {
+        private final java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        private final java.util.concurrent.CompletableFuture<byte[]> result =
+                new java.util.concurrent.CompletableFuture<>();
+        private java.util.concurrent.Flow.Subscription subscription;
+
+        public java.util.concurrent.CompletionStage<byte[]> getBody() {
+            return result;
+        }
+
+        public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) {
+            this.subscription = subscription;
+            subscription.request(Long.MAX_VALUE);
+        }
+
+        public void onNext(List<java.nio.ByteBuffer> buffers) {
+            for (var buffer : buffers) {
+                if (buffer.remaining() > 65536 - bytes.size()) {
+                    subscription.cancel();
+                    result.completeExceptionally(
+                            new java.io.IOException("BILLING_RESPONSE_TOO_LARGE"));
+                    return;
+                }
+                byte[] chunk = new byte[buffer.remaining()];
+                buffer.get(chunk);
+                bytes.writeBytes(chunk);
+            }
+        }
+
+        public void onError(Throwable failure) {
+            result.completeExceptionally(failure);
+        }
+
+        public void onComplete() {
+            result.complete(bytes.toByteArray());
         }
     }
 

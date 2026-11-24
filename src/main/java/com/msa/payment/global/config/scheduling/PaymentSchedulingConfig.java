@@ -18,6 +18,11 @@ public class PaymentSchedulingConfig {
         return scheduler("payment-outbox-");
     }
 
+    @Bean
+    public ThreadPoolTaskScheduler membershipWorkerScheduler() {
+        return scheduler("membership-worker-");
+    }
+
     private ThreadPoolTaskScheduler scheduler(String prefix) {
         var scheduler = new ThreadPoolTaskScheduler();
         scheduler.setPoolSize(1);

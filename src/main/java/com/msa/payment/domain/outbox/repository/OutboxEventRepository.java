@@ -14,7 +14,7 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
     /** 원본 payload 없이 해당 서비스 소유 Outbox의 미발행 집계만 읽습니다. */
     @org.springframework.data.jpa.repository.Query(
             "select count(e) as pending, min(e.createdAt) as oldest from OutboxEvent e where"
-                + " e.publishedAt is null")
+                    + " e.publishedAt is null")
     com.msa.payment.domain.outbox.dto.response.OutboxMetricsSnapshot monitoringSnapshot();
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -22,7 +22,7 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
             value =
                     """
                     select * from payment.outbox_events
-                    where published_at is null and next_attempt_at <= :now
+                    where published_at is null and failed_at is null and next_attempt_at <= :now
                     order by created_at,id limit 1 for update skip locked
                     """,
             nativeQuery = true)

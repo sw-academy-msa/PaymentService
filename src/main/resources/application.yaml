@@ -68,6 +68,16 @@ payment:
     jwk-set-uri: ${ACCOUNT_JWKS_URI:http://localhost:8080/.well-known/jwks.json}
 # 빌링은 별도 개별 테스트 키만 사용하며 운영 배포 전 명시 활성화가 필요합니다.
 membership:
+  api-enabled: ${MEMBERSHIP_API_ENABLED:false}
+  renewal-enabled: ${MEMBERSHIP_RENEWAL_ENABLED:false}
+  recovery-enabled: ${MEMBERSHIP_RECOVERY_ENABLED:false}
+  consumer-enabled: ${MEMBERSHIP_CONSUMER_ENABLED:false}
+  amount: ${MEMBERSHIP_AMOUNT:4900}
+  plan-version: ${MEMBERSHIP_PLAN_VERSION:monthly-v1}
+  terms-version: ${MEMBERSHIP_TERMS_VERSION:recurring-v1}
+  provider-key-version: ${MEMBERSHIP_PROVIDER_KEY_VERSION:v1}
+  success-url: ${MEMBERSHIP_SUCCESS_URL:https://stockdrop-app.vercel.app/membership/billing/success}
+  fail-url: ${MEMBERSHIP_FAIL_URL:https://stockdrop-app.vercel.app/membership/billing/fail}
   billing:
     enabled: ${MEMBERSHIP_BILLING_ENABLED:false}
     client-key: ${TOSS_BILLING_CLIENT_KEY:}
