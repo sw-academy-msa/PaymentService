@@ -66,6 +66,17 @@ payment:
     issuer: ${JWT_ISSUER:http://localhost:8080}
     audience: ${JWT_AUDIENCE:stockdrop-api}
     jwk-set-uri: ${ACCOUNT_JWKS_URI:http://localhost:8080/.well-known/jwks.json}
+# 빌링은 별도 개별 테스트 키만 사용하며 운영 배포 전 명시 활성화가 필요합니다.
+membership:
+  billing:
+    enabled: ${MEMBERSHIP_BILLING_ENABLED:false}
+    client-key: ${TOSS_BILLING_CLIENT_KEY:}
+    secret-key: ${TOSS_BILLING_SECRET_KEY:}
+    base-url: https://api.tosspayments.com
+    request-timeout: 65s
+    allow-insecure-local: false
+  crypto:
+    data-key-v1: ${MEMBERSHIP_BILLING_DATA_KEY_V1:}
 eureka:
   client:
     # 서버에서 제거된 인스턴스를 5초 주기로 반영합니다.
