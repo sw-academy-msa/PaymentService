@@ -132,6 +132,12 @@ class BillingClientImplTest {
     }
 
     @Test
+    void responseLargerThanSixtyFourKiBIsRejectedDuringReception() {
+        body = "x".repeat(65537);
+        assertThat(client.charge("fixture-billing", charge).status()).isEqualTo(Status.UNKNOWN);
+    }
+
+    @Test
     void repeatsIdenticalRequestAndValidatesApprovalAmount() {
         assertThat(client.charge("fixture-billing", charge).status()).isEqualTo(Status.APPROVED);
         assertThat(client.charge("fixture-billing", charge).status()).isEqualTo(Status.APPROVED);

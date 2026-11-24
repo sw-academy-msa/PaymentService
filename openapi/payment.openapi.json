@@ -1,83 +1,441 @@
 {
-    "openapi":  "3.1.0",
-    "info":  {
-                 "title":  "STOCKDROP Payment",
-                 "description":  "공개 API는 BUYER의 SDK 클라이언트 키 조회입니다. 테스트 결제 승인·조회·보상은 Order 전용 Kafka 명령으로 처리합니다.",
-                 "version":  "v1"
-             },
-    "servers":  [
-                    {
-                        "url":  "http://localhost:8000",
-                        "description":  "일반 Gateway"
-                    },
-                    {
-                        "url":  "http://localhost:8084",
-                        "description":  "로컬 개발 서비스"
-                    }
-                ],
-    "security":  [
-                     {
-                         "bearerAuth":  [
-
-                                        ]
-                     }
-                 ],
-    "paths":  {
-                  "/api/v1/payments/client-configuration":  {
-                                                                "get":  {
-                                                                            "tags":  [
-                                                                                         "payment-configuration-controller"
-                                                                                     ],
-                                                                            "operationId":  "configuration",
-                                                                            "responses":  {
-                                                                                              "200":  {
-                                                                                                          "description":  "OK",
-                                                                                                          "content":  {
-                                                                                                                          "application/json":  {
-                                                                                                                                                   "schema":  {
-                                                                                                                                                                  "$ref":  "#/components/schemas/ApiResponseClientConfigurationResponse"
-                                                                                                                                                              }
-                                                                                                                                               }
-                                                                                                                      }
-                                                                                                      }
-                                                                                          }
-                                                                        }
-                                                            }
-              },
-    "components":  {
-                       "schemas":  {
-                                       "ApiResponseClientConfigurationResponse":  {
-                                                                                      "type":  "object",
-                                                                                      "properties":  {
-                                                                                                         "success":  {
-                                                                                                                         "type":  "boolean"
-                                                                                                                     },
-                                                                                                         "code":  {
-                                                                                                                      "type":  "string"
-                                                                                                                  },
-                                                                                                         "message":  {
-                                                                                                                         "type":  "string"
-                                                                                                                     },
-                                                                                                         "data":  {
-                                                                                                                      "$ref":  "#/components/schemas/ClientConfigurationResponse"
-                                                                                                                  }
-                                                                                                     }
-                                                                                  },
-                                       "ClientConfigurationResponse":  {
-                                                                           "type":  "object",
-                                                                           "properties":  {
-                                                                                              "clientKey":  {
-                                                                                                                "type":  "string"
-                                                                                                            }
-                                                                                          }
-                                                                       }
-                                   },
-                       "securitySchemes":  {
-                                               "bearerAuth":  {
-                                                                  "type":  "http",
-                                                                  "scheme":  "bearer",
-                                                                  "bearerFormat":  "JWT"
-                                                              }
-                                           }
-                   }
+  "openapi": "3.1.0",
+  "info": {
+    "title": "STOCKDROP Payment",
+    "description": "공개 API는 BUYER의 SDK 클라이언트 키 조회입니다. 테스트 결제 승인·조회·보상은 Order 전용 Kafka 명령으로 처리합니다.",
+    "version": "v1"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "일반 Gateway"
+    },
+    {
+      "url": "http://localhost:8084",
+      "description": "로컬 개발 서비스"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/v1/payments/memberships/auth-sessions": {
+      "post": {
+        "tags": [
+          "membership-controller"
+        ],
+        "summary": "현재 요금과 약관에 동의하고 본인 카드 인증 세션 생성",
+        "operationId": "create",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MembershipAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMembershipSessionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/payments/memberships/auth-sessions/{id}/completion": {
+      "post": {
+        "tags": [
+          "membership-controller"
+        ],
+        "summary": "본인 SDK 카드 인증 결과 접수",
+        "operationId": "complete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MembershipCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMembershipOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/payments/memberships/me": {
+      "get": {
+        "tags": [
+          "membership-controller"
+        ],
+        "summary": "본인 멤버십 금융 처리 상태 조회",
+        "operationId": "get",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMembershipResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/payments/memberships/configuration": {
+      "get": {
+        "tags": [
+          "membership-controller"
+        ],
+        "summary": "멤버십 요금과 카드 인증 설정 조회",
+        "operationId": "configuration",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMembershipConfigurationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/payments/client-configuration": {
+      "get": {
+        "tags": [
+          "payment-configuration-controller"
+        ],
+        "operationId": "configuration_1",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseClientConfigurationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "MembershipAuthRequest": {
+        "type": "object",
+        "properties": {
+          "planVersion": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 0
+          },
+          "termsVersion": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 0
+          },
+          "recurringPaymentAgreed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "planVersion",
+          "termsVersion"
+        ]
+      },
+      "ApiResponseMembershipSessionResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MembershipSessionResponse"
+          }
+        }
+      },
+      "MembershipSessionResponse": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customerKey": {
+            "type": "string"
+          },
+          "clientKey": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "successUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "failUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "MembershipCompletionRequest": {
+        "type": "object",
+        "properties": {
+          "authKey": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 0
+          },
+          "customerKey": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 0
+          }
+        },
+        "required": [
+          "authKey",
+          "customerKey"
+        ]
+      },
+      "ApiResponseMembershipOperationResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MembershipOperationResponse"
+          }
+        }
+      },
+      "MembershipOperationResponse": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationStatus": {
+            "type": "string"
+          },
+          "refreshRequired": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ApiResponseMembershipResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MembershipResponse"
+          }
+        }
+      },
+      "MembershipResponse": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string"
+          },
+          "autoRenew": {
+            "type": "boolean"
+          },
+          "periodStart": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "periodEnd": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entitlementUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "nextChargeAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "billingRegistrationRequired": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ApiResponseMembershipConfigurationResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MembershipConfigurationResponse"
+          }
+        }
+      },
+      "MembershipConfigurationResponse": {
+        "type": "object",
+        "properties": {
+          "clientKey": {
+            "type": "string"
+          },
+          "planVersion": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "termsVersion": {
+            "type": "string"
+          },
+          "successUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "failUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "ApiResponseClientConfigurationResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ClientConfigurationResponse"
+          }
+        }
+      },
+      "ClientConfigurationResponse": {
+        "type": "object",
+        "properties": {
+          "clientKey": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
 }

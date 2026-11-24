@@ -43,6 +43,11 @@ public class OutboxEvent {
     public Instant nextAttemptAt;
 
     public Instant publishedAt;
+    public Instant failedAt;
+
+    @Column(length = 64)
+    public String lastFailureCode;
+
     public int attempts;
 
     protected OutboxEvent() {}
