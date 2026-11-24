@@ -35,7 +35,12 @@ public class TossClientImpl implements TossClient {
     private final JsonMapper json;
     private final Clock clock;
 
-    public TossClientImpl(HttpClient http, TossProperties props, JsonMapper json, Clock clock) {
+    public TossClientImpl(
+            @org.springframework.beans.factory.annotation.Qualifier("tossHttpClient")
+                    HttpClient http,
+            TossProperties props,
+            JsonMapper json,
+            Clock clock) {
         this.http = http;
         this.props = props;
         this.json = json;
