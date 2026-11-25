@@ -13,6 +13,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.net.*;
 import java.net.http.*;
@@ -116,7 +117,7 @@ public class GaClientImpl implements GaClient {
         params.put("shipping", a.shipping());
         if (a.couponName() != null) params.put("coupon", a.couponName());
         params.put("items", List.of(item));
-        params.put("session_id", a.sessionId());
+        params.put("session_id", new BigInteger(a.sessionId()));
         params.put("engagement_time_msec", 1);
         return Map.of(
                 "client_id",

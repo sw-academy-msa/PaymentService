@@ -93,6 +93,13 @@ class GaClientImplTest {
                                     200, "{\"success\":true,\"data\":{\"eligible\":true}}"));
             assertThat(client.send(work)).isEqualTo("SENT");
             var body = json.readTree(received.get());
+            assertThat(
+                            body.path("events")
+                                    .get(0)
+                                    .path("params")
+                                    .path("session_id")
+                                    .isIntegralNumber())
+                    .isTrue();
             assertThat(body.path("user_id").asText()).isEqualTo(identity.toString());
             assertThat(body.path("events").get(0).path("name").asText()).isEqualTo("purchase");
             assertThat(body.path("events").get(0).path("params").path("transaction_id").asText())
