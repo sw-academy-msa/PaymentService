@@ -16,6 +16,8 @@ import java.util.concurrent.TimeUnit;
 @Service
 @ConditionalOnProperty(name = "payment.outbox.publisher-enabled", havingValue = "true")
 public class OutboxPublisherImpl implements OutboxPublisher {
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(OutboxPublisherImpl.class);
     private final OutboxEventRepository events;
     private final KafkaTemplate<String, byte[]> kafka;
     private final Clock clock;
@@ -44,6 +46,13 @@ public class OutboxPublisherImpl implements OutboxPublisher {
             long delay = Math.min(60, 1L << Math.min(6, event.attempts));
             event.attempts++;
             event.nextAttemptAt = clock.instant().plusSeconds(delay);
+            if ("stockdrop.membership.events.private.v1".equals(event.topic)) {
+                event.lastFailureCode = "MEMBERSHIP_OUTBOX_SEND_FAILED";
+                if (event.attempts >= 20) {
+                    event.failedAt = clock.instant();
+                    log.error("Membership outbox quarantined eventId={}", event.id);
+                }
+            }
             return true;
         }
         // DB 저장 실패를 전송 실패로 삼키지 않습니다. 롤백되면 다음 시도에 같은 이벤트가 다시 전송됩니다.

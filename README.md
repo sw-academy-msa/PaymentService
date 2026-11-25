@@ -62,3 +62,5 @@ Lombok은 Spring Boot가 관리하는 버전을 compileOnly·annotationProcessor
 
 [원본 확인, 신규 거래 차단과 장애 회수 계약](contracts/account-withdrawal-v1.md)을 확인합니다.
 완료된 판매 이력은 탈퇴 차단 사유가 아닙니다. 진행 거래와 미확정 결제/보상만 확인하며 수수료는 후속 구현 범위입니다.
+
+쿠폰 연동은 [상세 문서](docs/ga-measurement-protocol.md)를 따릅니다.
