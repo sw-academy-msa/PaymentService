@@ -66,7 +66,8 @@ public class GaClientImpl implements GaClient {
         var envelope = json.readTree(reply.body());
         if (!envelope.path("success").isBoolean() || !envelope.path("success").booleanValue())
             throw new RemoteUnavailable();
-        var eligible = envelope.path("data").path("eligible");
+        // AI 내부 응답 AnalyticsEligibilityResponse의 필드 이름입니다.
+        var eligible = envelope.path("data").path("analyticsEnabled");
         if (!eligible.isBoolean()) throw new RemoteUnavailable();
         if (!eligible.booleanValue()) return "SKIPPED";
         try {
