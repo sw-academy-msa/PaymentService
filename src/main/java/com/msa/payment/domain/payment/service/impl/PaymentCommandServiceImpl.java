@@ -95,6 +95,20 @@ public class PaymentCommandServiceImpl implements PaymentCommandService {
             if (bound.isPresent() && !bound.get().equals(a.id)) invalid();
             a.paymentKey = c.paymentKey();
         }
+        if (c.analytics() != null) {
+            if (!"APPROVE".equals(c.action())) invalid();
+            try {
+                if (Math.addExact(
+                                c.analytics().itemsAmount() - c.analytics().couponDiscount(),
+                                c.analytics().shipping())
+                        != c.amount()) invalid();
+            } catch (ArithmeticException overflow) {
+                invalid();
+            }
+            String analytics = json.writeValueAsString(c.analytics());
+            if (a.analyticsPayload != null && !a.analyticsPayload.equals(analytics)) invalid();
+            a.analyticsPayload = analytics;
+        }
         a.approvalRequested |= c.action().equals("APPROVE");
         a.cancellationRequested |= c.cancellationRequested() || c.action().equals("CANCEL");
         // 외부 승인을 한 번도 시작하지 않은 취소는 뒤늦은 APPROVE를 영구 차단할 수 있습니다.

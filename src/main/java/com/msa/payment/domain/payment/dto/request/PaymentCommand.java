@@ -1,5 +1,9 @@
 package com.msa.payment.domain.payment.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.msa.payment.domain.analytics.dto.request.PaymentAnalytics;
+
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 
 import java.time.Instant;
@@ -18,7 +22,37 @@ public record PaymentCommand(
         @Positive long amount,
         @NotNull Instant expiresAt,
         @NotNull Boolean cancellationRequested,
-        @Size(max = 200) String paymentKey) {
+        @Size(max = 200) String paymentKey,
+        @JsonInclude(JsonInclude.Include.NON_NULL) @Valid PaymentAnalytics analytics) {
+    public PaymentCommand(
+            UUID eventId,
+            int schemaVersion,
+            String type,
+            String action,
+            UUID orderId,
+            UUID paymentAttemptId,
+            long commandVersion,
+            Instant occurredAt,
+            long amount,
+            Instant expiresAt,
+            Boolean cancellationRequested,
+            String paymentKey) {
+        this(
+                eventId,
+                schemaVersion,
+                type,
+                action,
+                orderId,
+                paymentAttemptId,
+                commandVersion,
+                occurredAt,
+                amount,
+                expiresAt,
+                cancellationRequested,
+                paymentKey,
+                null);
+    }
+
     @Override
     public String toString() {
         return "PaymentCommand[eventId=" + eventId + "]";
