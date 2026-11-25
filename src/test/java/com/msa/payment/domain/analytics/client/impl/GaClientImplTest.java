@@ -84,13 +84,13 @@ class GaClientImplTest {
             when(internal.send(anyString(), anyString(), anyString(), anyMap(), isNull()))
                     .thenReturn(
                             new InternalReply(
-                                    200, "{\"success\":true,\"data\":{\"eligible\":false}}"));
+                                    200, "{\"success\":true,\"data\":{\"analyticsEnabled\":false}}"));
             assertThat(client.send(work)).isEqualTo("SKIPPED");
             assertThat(received.get()).isNull();
             when(internal.send(anyString(), anyString(), anyString(), anyMap(), isNull()))
                     .thenReturn(
                             new InternalReply(
-                                    200, "{\"success\":true,\"data\":{\"eligible\":true}}"));
+                                    200, "{\"success\":true,\"data\":{\"analyticsEnabled\":true}}"));
             assertThat(client.send(work)).isEqualTo("SENT");
             var body = json.readTree(received.get());
             assertThat(
