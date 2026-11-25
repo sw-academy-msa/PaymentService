@@ -71,6 +71,9 @@ public class PaymentAttempt {
     @Column(nullable = false)
     public long resultVersion;
 
+    @Column(columnDefinition = "text")
+    public String analyticsPayload;
+
     public Instant approvedAt;
     public UUID leaseToken;
     public Instant leaseUntil;

@@ -48,6 +48,19 @@ server:
   shutdown: graceful
   forward-headers-strategy: none
 payment:
+  ga:
+    base-url: https://www.google-analytics.com
+    allow-insecure-local: false
+    enabled: ${PAYMENT_GA_MP_ENABLED:false}
+    measurement-id: ${GA_MEASUREMENT_ID:}
+    api-secret: ${GA_MP_API_SECRET:}
+  clients:
+    scheme: ${PAYMENT_INTERNAL_SCHEME:https}
+    allow-plain-http: ${PAYMENT_INTERNAL_ALLOW_PLAIN_HTTP:false}
+    account: account-service
+    ai: ai-service
+    client-secret: ${PAYMENT_CLIENT_SECRET:}
+    service-subject: ${PAYMENT_SERVICE_SUBJECT:}
   # 원본·Outbox 저장은 항상 수행하고 외부 처리·소비·발행만 명시적으로 활성화합니다.
   messaging:
     enabled: ${PAYMENT_MESSAGING_ENABLED:false}

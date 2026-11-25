@@ -1,5 +1,6 @@
 package com.msa.payment.domain.payment.service.impl;
 
+import com.msa.payment.domain.analytics.service.GaDispatchStore;
 import com.msa.payment.domain.outbox.entity.OutboxEvent;
 import com.msa.payment.domain.payment.entity.PaymentAttempt;
 import com.msa.payment.domain.payment.service.PaymentResultOutboxService;
@@ -21,14 +22,18 @@ public class PaymentResultOutboxServiceImpl implements PaymentResultOutboxServic
     private final EntityManager em;
     private final JsonMapper json;
     private final Clock clock;
+    private final GaDispatchStore ga;
 
-    public PaymentResultOutboxServiceImpl(EntityManager em, JsonMapper json, Clock clock) {
+    public PaymentResultOutboxServiceImpl(
+            EntityManager em, JsonMapper json, Clock clock, GaDispatchStore ga) {
         this.em = em;
         this.json = json;
         this.clock = clock;
+        this.ga = ga;
     }
 
     public void record(PaymentAttempt a) {
+        ga.record(a);
         UUID eventId = UUID.randomUUID();
         var event = new LinkedHashMap<String, Object>();
         event.put("eventId", eventId);
