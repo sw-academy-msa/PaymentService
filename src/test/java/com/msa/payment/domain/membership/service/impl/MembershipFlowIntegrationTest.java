@@ -91,18 +91,46 @@ class MembershipFlowIntegrationTest extends PaymentDatabaseTestSupport {
     }
 
     private void cancel() {
+        command("MEMBERSHIP_CANCEL_REQUESTED", 1);
+    }
+
+    private void command(String type, long version) {
         var s = subscriptions.findByAccountId(account).orElseThrow();
         var command =
                 new MembershipCommand(
                         UUID.randomUUID(),
                         1,
-                        "MEMBERSHIP_CANCEL_REQUESTED",
+                        type,
                         account,
                         s.id,
                         s.generation,
-                        1,
+                        version,
                         clock.instant());
         commands.receive(account.toString(), json.writeValueAsBytes(command));
+    }
+
+    private List<String> resultTypes() {
+        return jdbc
+                .queryForList(
+                        "select payload from payment.outbox_events where"
+                                + " topic='stockdrop.membership.events.private.v1' order by"
+                                + " created_at",
+                        String.class)
+                .stream()
+                .map(p -> json.readTree(p).path("type").asText())
+                .toList();
+    }
+
+    private MembershipWork declinedRenewal() {
+        approve(registered(), start);
+        clock.set(api.get(account).periodEnd());
+        store.advance();
+        var renewal = store.claimCharge();
+        store.complete(
+                renewal,
+                new BillingReply(Status.DECLINED, null, null, null, "REJECT_CARD_PAYMENT"));
+        assertThat(api.get(account).state()).isEqualTo("GRACE");
+        return renewal;
     }
 
     @Test
@@ -147,13 +175,18 @@ class MembershipFlowIntegrationTest extends PaymentDatabaseTestSupport {
     }
 
     @Test
-    void cancellationAfterExecutionStartKeepsApprovedPeriodAndDeletesProviderKey() {
+    void cancellationAfterExecutionStartKeepsApprovedPeriodAndDeletesProviderKeyAtExpiry() {
         var work = registered();
         cancel();
         assertThat(store.claimDelete()).isNull();
         approve(work, start);
         assertThat(api.get(account).state()).isEqualTo("CANCEL_SCHEDULED");
         assertThat(api.get(account).autoRenew()).isFalse();
+        // 해지 예약 기간에는 철회할 수 있도록 공급자 키를 남깁니다.
+        assertThat(store.claimDelete()).isNull();
+        clock.set(api.get(account).entitlementUntil());
+        store.advance();
+        assertThat(api.get(account).state()).isEqualTo("EXPIRED");
         var delete = store.claimDelete();
         assertThat(delete.billingKey()).isEqualTo("synthetic-billing");
         store.complete(delete, BillingReply.unknown("BILLING_DELETE_UNKNOWN"));
@@ -164,6 +197,141 @@ class MembershipFlowIntegrationTest extends PaymentDatabaseTestSupport {
         store.complete(delete, new BillingReply(Status.DELETED, null, null, null, null));
         assertThat(credentials.findById(delete.subscriptionId()).orElseThrow().billingKeyCipher)
                 .isNull();
+    }
+
+    @Test
+    void cancellationWithdrawalBeforeExpiryRestoresRenewalWithSameKey() {
+        approve(registered(), start);
+        var periodEnd = api.get(account).periodEnd();
+        cancel();
+        assertThat(api.get(account).state()).isEqualTo("CANCEL_SCHEDULED");
+        assertThat(store.claimDelete()).isNull();
+        command("MEMBERSHIP_CANCEL_WITHDRAW_REQUESTED", 2);
+        var restored = api.get(account);
+        assertThat(restored.state()).isEqualTo("ACTIVE");
+        assertThat(restored.autoRenew()).isTrue();
+        assertThat(restored.nextChargeAt()).isEqualTo(periodEnd);
+        assertThat(restored.entitlementUntil()).isEqualTo(periodEnd);
+        assertThat(resultTypes()).endsWith("MEMBERSHIP_CANCEL_WITHDRAWN");
+        assertThat(store.claimDelete()).isNull();
+        clock.set(periodEnd);
+        store.advance();
+        var renewal = store.claimCharge();
+        assertThat(renewal.billingKey()).isEqualTo("synthetic-billing");
+        assertThat(renewal.charge().amount()).isEqualTo(4900);
+    }
+
+    @Test
+    void cancellationWithdrawalAfterExpiryIsRejectedWithoutStateChange() {
+        approve(registered(), start);
+        cancel();
+        clock.set(api.get(account).entitlementUntil());
+        store.advance();
+        command("MEMBERSHIP_CANCEL_WITHDRAW_REQUESTED", 2);
+        assertThat(api.get(account).state()).isEqualTo("EXPIRED");
+        assertThat(api.get(account).autoRenew()).isFalse();
+        assertThat(resultTypes()).endsWith("MEMBERSHIP_CANCEL_WITHDRAW_REJECTED");
+        assertThat(store.claimDelete()).isNotNull();
+    }
+
+    @Test
+    void lateEarlierCancellationDoesNotOverrideLaterWithdrawal() {
+        approve(registered(), start);
+        command("MEMBERSHIP_CANCEL_WITHDRAW_REQUESTED", 2);
+        assertThat(resultTypes()).endsWith("MEMBERSHIP_CANCEL_WITHDRAW_REJECTED");
+        cancel();
+        assertThat(api.get(account).state()).isEqualTo("ACTIVE");
+        assertThat(api.get(account).autoRenew()).isTrue();
+    }
+
+    @Test
+    void graceCardReplacementChargesSameCycleWithNewKeyAndDeletesRetiredKey() {
+        var declined = declinedRenewal();
+        var session =
+                api.create(
+                        account,
+                        UUID.randomUUID(),
+                        new MembershipAuthRequest("monthly-v1", "recurring-v1", true));
+        api.complete(
+                account,
+                session.sessionId(),
+                UUID.randomUUID(),
+                new MembershipCompletionRequest("synthetic-auth-2", session.customerKey()));
+        assertThat(api.get(account).state()).isEqualTo("GRACE");
+        var issue = store.claimIssue();
+        assertThat(issue.authKey()).isEqualTo("synthetic-auth-2");
+        store.complete(
+                issue, new BillingReply(Status.ISSUED, "replacement-billing", null, null, null));
+        var charge = store.claimCharge();
+        assertThat(charge.workId()).isNotEqualTo(declined.workId());
+        assertThat(charge.billingKey()).isEqualTo("replacement-billing");
+        assertThat(charge.customerKey()).isEqualTo(session.customerKey());
+        assertThat(attempts.findById(charge.workId()).orElseThrow().attemptNumber).isEqualTo(1);
+        approve(charge, clock.instant());
+        var renewed = api.get(account);
+        assertThat(renewed.state()).isEqualTo("ACTIVE");
+        assertThat(renewed.periodEnd()).isEqualTo(Instant.parse("2030-03-31T03:00:00Z"));
+        var retired = store.claimDelete();
+        assertThat(retired.action()).isEqualTo("DELETE_RETIRED");
+        assertThat(retired.billingKey()).isEqualTo("synthetic-billing");
+        store.complete(retired, new BillingReply(Status.DELETED, null, null, null, null));
+        var credential = credentials.findById(retired.subscriptionId()).orElseThrow();
+        assertThat(credential.retiredBillingKeyCipher).isNull();
+        assertThat(credential.billingKeyCipher).isNotNull();
+        assertThat(credential.deleteState).isEqualTo("ACTIVE");
+        assertThat(store.claimDelete()).isNull();
+    }
+
+    @Test
+    void graceCardReplacementIsBlockedWhileRetryIsInFlightAndPausesOldKeyRetry() {
+        var declined = declinedRenewal();
+        var due = clock.instant();
+        var request = new MembershipAuthRequest("monthly-v1", "recurring-v1", true);
+        var session = api.create(account, UUID.randomUUID(), request);
+        // 카드 교체 세션 중에는 이전 키로 다음 재시도를 만들지 않습니다.
+        clock.set(due.plus(Duration.ofDays(1)));
+        store.advance();
+        assertThat(store.claimCharge()).isNull();
+        assertThat(api.get(account).nextChargeAt()).isEqualTo(clock.instant().plusSeconds(60));
+        // 세션이 만료되면 기존 일정의 재시도를 이전 키로 진행합니다.
+        assertThat(store.claimIssue()).isNull();
+        assertThat(sessions.findById(session.sessionId()).orElseThrow().state)
+                .isEqualTo("EXPIRED");
+        assertThat(api.get(account).state()).isEqualTo("GRACE");
+        clock.set(clock.instant().plusSeconds(60));
+        store.advance();
+        var retry = store.claimCharge();
+        assertThat(retry.workId()).isNotEqualTo(declined.workId());
+        assertThat(retry.billingKey()).isEqualTo("synthetic-billing");
+        // 재시도 결과가 나기 전에는 새 카드 등록으로 중복 결제를 만들 수 없습니다.
+        assertThatThrownBy(() -> api.create(account, UUID.randomUUID(), request))
+                .isInstanceOf(MembershipException.class);
+    }
+
+    @Test
+    void graceCardReplacementIsRejectedAfterAllFourChargesAreUsed() {
+        approve(registered(), start);
+        var due = api.get(account).periodEnd();
+        clock.set(due);
+        store.advance();
+        for (int day = 0; day < 4; day++) {
+            store.complete(
+                    store.claimCharge(),
+                    new BillingReply(Status.DECLINED, null, null, null, "REJECT_CARD_PAYMENT"));
+            if (day < 3) {
+                clock.set(due.plus(Duration.ofDays(day + 1)));
+                store.advance();
+            }
+        }
+        assertThat(api.get(account).state()).isEqualTo("GRACE");
+        assertThatThrownBy(
+                        () ->
+                                api.create(
+                                        account,
+                                        UUID.randomUUID(),
+                                        new MembershipAuthRequest(
+                                                "monthly-v1", "recurring-v1", true)))
+                .isInstanceOf(MembershipException.class);
     }
 
     @Test

@@ -102,7 +102,8 @@ public class MembershipWorkStoreImpl implements MembershipWorkStore {
                 // 발급 결과가 불명이면 새 인증으로 기존 키를 덮지 않고 대사를 기다립니다.
                 a.state = a.attempts > 0 ? "MANUAL_REVIEW" : "EXPIRED";
                 a.authKeyCipher = null;
-                if (a.attempts == 0) {
+                // 유예 중 카드 교체 세션이 끝나도 기존 구독의 유예 상태는 유지합니다.
+                if (a.attempts == 0 && "PENDING".equals(s.state)) {
                     s.state = "EXPIRED";
                     s.autoRenew = false;
                 }
@@ -213,6 +214,8 @@ public class MembershipWorkStoreImpl implements MembershipWorkStore {
         if (!policy.recoveryEnabled()) return null;
         for (UUID id : credentials.findDue(clock.instant())) {
             var s = subscriptions.lock(id).orElseThrow();
+            var retired = claimRetiredDelete(s);
+            if (retired != null) return retired;
             if (s.autoRenew
                     || attempts.hasUnresolved(id)
                     || sessions.existsBySubscriptionIdAndStateIn(
@@ -244,6 +247,35 @@ public class MembershipWorkStoreImpl implements MembershipWorkStore {
         return null;
     }
 
+    private MembershipWork claimRetiredDelete(MembershipSubscription s) {
+        var a = credentials.lock(s.id).orElseThrow();
+        // 카드 교체로 물러난 이전 키는 새 키 청구와 무관하게 공급자 삭제를 진행합니다.
+        if (a.retiredBillingKeyCipher == null
+                || a.retiredNextAt == null
+                || live(a.leaseUntil)
+                || a.retiredNextAt.isAfter(clock.instant())) return null;
+        if (a.retiredAttempts >= 10) {
+            a.retiredNextAt = null;
+            a.lastFailureCode = "BILLING_RETIRED_DELETE_MANUAL";
+            return null;
+        }
+        a.leaseToken = UUID.randomUUID();
+        a.leaseUntil = clock.instant().plusSeconds(120);
+        a.retiredAttempts++;
+        return new MembershipWork(
+                "DELETE_RETIRED",
+                s.id,
+                s.generation,
+                s.id,
+                a.leaseToken,
+                null,
+                null,
+                decrypt(a.retiredBillingKeyCipher, s, "billingKey"),
+                null,
+                null,
+                false);
+    }
+
     public void complete(MembershipWork work, BillingReply reply) {
         var s = subscriptions.lock(work.subscriptionId()).orElseThrow();
         if (s.generation != work.generation()) return;
@@ -251,6 +283,7 @@ public class MembershipWorkStoreImpl implements MembershipWorkStore {
             case "ISSUE" -> completeIssue(s, work, reply);
             case "CHARGE", "LOOKUP" -> completeCharge(s, work, reply);
             case "DELETE" -> completeDelete(s, work, reply);
+            case "DELETE_RETIRED" -> completeRetiredDelete(s, work, reply);
             default -> throw new IllegalArgumentException("멤버십 작업 불일치");
         }
     }
@@ -266,6 +299,13 @@ public class MembershipWorkStoreImpl implements MembershipWorkStore {
             return;
         }
         var credential = credentials.lock(s.id).orElse(null);
+        boolean replace = credential != null && credential.billingKeyCipher != null;
+        if (replace
+                && (live(credential.leaseUntil) || credential.retiredBillingKeyCipher != null)) {
+            // 이전 키 삭제가 진행 중이면 같은 발급 멱등 키로 나중에 다시 받아 보관합니다.
+            a.nextAttemptAt = clock.instant().plusSeconds(delay(a.attempts));
+            return;
+        }
         if (credential == null) {
             credential =
                     MembershipBillingCredential.builder()
@@ -277,6 +317,12 @@ public class MembershipWorkStoreImpl implements MembershipWorkStore {
                             .build();
             em.persist(credential);
         }
+        if (replace) {
+            // 이전 키는 공급자 삭제가 확인될 때까지 암호문으로 보관합니다.
+            credential.retiredBillingKeyCipher = credential.billingKeyCipher;
+            credential.retiredNextAt = clock.instant();
+            credential.retiredAttempts = 0;
+        }
         credential.customerKeyCipher = a.customerKeyCipher;
         credential.billingKeyCipher =
                 encryption.encrypt(reply.billingKey(), s.id, s.generation, "billingKey");
@@ -286,7 +332,27 @@ public class MembershipWorkStoreImpl implements MembershipWorkStore {
         credential.updatedAt = clock.instant();
         a.state = "ISSUED";
         a.authKeyCipher = null;
-        if (s.autoRenew) createCycle(s, 1, clock.instant());
+        if (!replace) {
+            if (s.autoRenew) createCycle(s, 1, clock.instant());
+        } else if (s.autoRenew
+                && "GRACE".equals(s.state)
+                && s.graceUntil != null
+                && clock.instant().isBefore(s.graceUntil)
+                && !attempts.hasUnresolved(s.id)) {
+            // 유예 중 새 카드는 같은 청구 기간의 다음 시도로 즉시 재청구합니다.
+            var c =
+                    cycles.findBySubscriptionIdAndGenerationAndCycleNumber(
+                                    s.id, s.generation, cycles.lastNumber(s.id, s.generation))
+                            .orElseThrow();
+            c = cycles.lock(c.id).orElseThrow();
+            // 카드 교체 재청구도 정기 청구와 재시도를 합한 최대 4회 안에서만 만듭니다.
+            if ("RETRY_WAIT".equals(c.status) && c.retryNumber < 3) {
+                createAttempt(s, c, c.retryNumber + 1);
+                c.status = "PENDING";
+                c.updatedAt = clock.instant();
+                s.nextChargeAt = null;
+            }
+        }
     }
 
     private void completeCharge(MembershipSubscription s, MembershipWork w, BillingReply reply) {
@@ -321,7 +387,7 @@ public class MembershipWorkStoreImpl implements MembershipWorkStore {
             s.graceUntil = null;
             s.state = s.autoRenew ? "ACTIVE" : "CANCEL_SCHEDULED";
             s.nextChargeAt = s.autoRenew ? c.periodEnd : null;
-            if (!s.autoRenew) requestDelete(s);
+            if (!s.autoRenew) keepUntilExpiry(s);
             results.record(
                     s,
                     c.cycleNumber == 1 ? "MEMBERSHIP_STARTED" : "MEMBERSHIP_RENEWED",
@@ -395,6 +461,12 @@ public class MembershipWorkStoreImpl implements MembershipWorkStore {
                                 .orElseThrow();
                 c = cycles.lock(c.id).orElseThrow();
                 if (c.retryNumber < 3 && clock.instant().isBefore(c.graceUntil)) {
+                    if (sessions.existsBySubscriptionIdAndStateIn(
+                            s.id, List.of("OPEN", "READY"))) {
+                        // 카드 교체 세션 중에는 이전 키로 재시도하지 않고 잠시 뒤 다시 확인합니다.
+                        s.nextChargeAt = clock.instant().plusSeconds(60);
+                        return true;
+                    }
                     createAttempt(s, c, c.retryNumber + 1);
                     c.status = "PENDING";
                     s.nextChargeAt = null;
@@ -478,6 +550,36 @@ public class MembershipWorkStoreImpl implements MembershipWorkStore {
         if (a != null && "ACTIVE".equals(a.deleteState)) {
             a.deleteState = "PENDING";
             a.deleteNextAt = clock.instant();
+            a.updatedAt = clock.instant();
+        }
+    }
+
+    private void completeRetiredDelete(
+            MembershipSubscription s, MembershipWork w, BillingReply reply) {
+        var a = credentials.lock(s.id).orElseThrow();
+        if (!owned(a.leaseToken, a.leaseUntil, w)) return;
+        a.leaseToken = null;
+        a.leaseUntil = null;
+        a.updatedAt = clock.instant();
+        if (reply.status() == Status.DELETED) {
+            a.retiredBillingKeyCipher = null;
+            a.retiredNextAt = null;
+        } else {
+            a.lastFailureCode = "BILLING_RETIRED_DELETE_UNKNOWN";
+            a.retiredNextAt = clock.instant().plusSeconds(delay(a.retiredAttempts));
+        }
+    }
+
+    private void keepUntilExpiry(MembershipSubscription s) {
+        var a = credentials.lock(s.id).orElse(null);
+        // 진행 중 청구 뒤 해지 예약이 되면 철회할 수 있도록 삭제 예약을 만료 시점까지 미룹니다.
+        // 현재 키 삭제를 시도한 적이 없으면 이전 키 삭제 임대가 있어도 복원합니다.
+        if (a != null
+                && "PENDING".equals(a.deleteState)
+                && a.billingKeyCipher != null
+                && a.attempts == 0) {
+            a.deleteState = "ACTIVE";
+            a.deleteNextAt = null;
             a.updatedAt = clock.instant();
         }
     }

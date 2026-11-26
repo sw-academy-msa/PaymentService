@@ -42,6 +42,15 @@ public class MembershipBillingCredential {
     @Column(length = 64)
     public String lastFailureCode;
 
+    // 유예 중 카드 교체로 물러난 이전 빌링키이며 공급자 삭제 확인 뒤 비웁니다.
+    @Column(columnDefinition = "text")
+    public String retiredBillingKeyCipher;
+
+    public Instant retiredNextAt;
+
+    @Column(nullable = false)
+    public int retiredAttempts;
+
     @Column(nullable = false)
     public Instant createdAt;
 
@@ -62,6 +71,9 @@ public class MembershipBillingCredential {
             Instant leaseUntil,
             int attempts,
             String lastFailureCode,
+            String retiredBillingKeyCipher,
+            Instant retiredNextAt,
+            int retiredAttempts,
             Instant createdAt,
             Instant updatedAt) {
         this.subscriptionId = subscriptionId;
@@ -74,6 +86,9 @@ public class MembershipBillingCredential {
         this.leaseUntil = leaseUntil;
         this.attempts = attempts;
         this.lastFailureCode = lastFailureCode;
+        this.retiredBillingKeyCipher = retiredBillingKeyCipher;
+        this.retiredNextAt = retiredNextAt;
+        this.retiredAttempts = retiredAttempts;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
