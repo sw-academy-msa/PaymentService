@@ -33,7 +33,7 @@ public class MembershipProcessorImpl implements MembershipProcessor {
                                     work.authKey(),
                                     work.customerKey(),
                                     "sdm-issue-" + work.workId());
-            case "DELETE" -> reply = client.delete(work.billingKey());
+            case "DELETE", "DELETE_RETIRED" -> reply = client.delete(work.billingKey());
             case "CHARGE" -> reply = client.charge(work.billingKey(), work.charge());
             case "LOOKUP" -> reply = client.lookup(work.charge(), work.paymentKey());
             default -> throw new IllegalArgumentException("멤버십 작업 불일치");

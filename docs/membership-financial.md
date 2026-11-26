@@ -13,7 +13,7 @@
 3. 고정 success URL의 authKey와 customerKey를 본인 세션 completion으로 보냅니다. callback query와 요청 원문은 분석 SDK와 access log에 남기지 않습니다.
 4. completion의 202는 접수만 보장합니다. `/me`의 금융 결과와 Account의 sourceVersion 반영을 확인한 뒤 기존 refresh API로 토큰을 즉시 재발급합니다. FE 화면은 후속 작업입니다.
 
-운영 redirect는 `https://stockdrop-app.vercel.app/membership/billing/success`와 `/fail`입니다. local 프로필만 `http://localhost:5179/membership/billing/success`와 `/fail`을 허용합니다. API 요청으로 임의 redirect를 받지 않습니다.
+운영 redirect는 프론트 HashRouter 경로인 `https://stockdrop-app.vercel.app/#/membership/billing/success`와 `#/membership/billing/fail`입니다. local 프로필만 `http://localhost:5179/#/membership/billing/success`와 `#/membership/billing/fail`을 허용합니다. 토스가 authKey와 customerKey 쿼리를 해시 앞(`/?authKey=...#/membership/...`)이나 해시 안(`#/membership/...?authKey=...`)에 붙일 수 있으므로 프론트는 기존 주문 결제 귀환처럼 두 위치를 모두 읽고 즉시 주소에서 지웁니다. API 요청으로 임의 redirect를 받지 않습니다.
 
 ## 금융 실행과 복구
 
@@ -28,6 +28,10 @@
 ## 해지와 탈퇴
 
 해지 명령은 autoRenew=false를 금융 원본에 먼저 커밋합니다. 시작하지 않은 미래 청구는 취소하며, 이미 시작한 청구는 같은 요청으로 대사합니다. 그 청구가 승인되면 납부기간을 제공하고 추가 갱신은 중지합니다. 유예 중 해지는 즉시 종료합니다. 키 삭제는 미확정 청구와 발급이 해결된 뒤 수행하며 공급자 삭제 확인 전에는 암호문을 지우지 않습니다. 실패는 유한 재시도 후 수동 대사로 남깁니다.
+
+해지 예약(CANCEL_SCHEDULED)은 혜택 종료 전에 철회할 수 있도록 빌링키를 혜택 종료(EXPIRED) 시점에 삭제합니다. 즉시 종료되는 해지(유예, 첫 결제 전)는 바로 삭제합니다. 해지 취소 명령 `MEMBERSHIP_CANCEL_WITHDRAW_REQUESTED`는 같은 세대의 해지 예약, 혜택 종료 전, 탈퇴 차단 없음, 미확정 청구 없음, 빌링키 ACTIVE일 때만 autoRenew=true, state=ACTIVE, nextChargeAt=periodEnd로 되살리고 `MEMBERSHIP_CANCEL_WITHDRAWN`을 발행합니다. 조건이 맞지 않으면 상태를 바꾸지 않고 `MEMBERSHIP_CANCEL_WITHDRAW_REJECTED` 스냅샷을 발행합니다. 계정별 commandVersion이 더 큰 명령을 이미 처리했다면 늦게 온 명령은 수신 기록만 남깁니다.
+
+결제 실패 유예(GRACE) 중에는 같은 세대에서 새 카드 인증 세션을 만들 수 있습니다. 자동갱신 중, 유예 상한 전, 미확정 청구와 진행 중 세션 없음, 기존 키 ACTIVE, 이전 교체 키 삭제 완료일 때만 허용하고 아니면 409입니다. 세션이 열려 있는 동안 정기 재시도는 이전 키로 실행하지 않고 60초 뒤 다시 확인합니다. 발급되면 이전 키는 retired 암호문으로 옮겨 공급자 삭제를 따로 진행하고, 같은 청구 기간의 다음 시도를 새 키로 즉시 만듭니다. 이 시도가 거절되면 기존 재시도 일정과 유예 상한을 그대로 따릅니다.
 
 기존 Account 전용 서비스 토큰의 `/internal/v1/account-withdrawals/{account}/memberships` 경로를 사용합니다. GET은 시작한 미확정 금융 수를 조회합니다. PUT `/fences/{operation}`은 새 가입과 새 실행을 차단합니다. POST `/fences/{operation}/completion`은 시작한 금융이 해결된 뒤 무환불 즉시 종료를 확정합니다. DELETE는 실패한 계정 탈퇴의 차단을 해제하고 지연된 같은 확보 요청을 거절하는 tombstone을 보존합니다. 이미 확정한 멤버십 해지는 되돌리지 않으며 이후 새 가입은 새 동의와 카드 등록이 필요합니다. Account 로컬 탈퇴 커밋이 실패해도 자동갱신을 임의로 복구하지 않습니다.
 
@@ -51,8 +55,10 @@ order by a.created_at;
 select id, subscription_id, state, expires_at
 from payment.membership_auth_sessions where state = 'MANUAL_REVIEW';
 
-select subscription_id, delete_state, attempts, last_failure_code
-from payment.membership_billing_credentials where delete_state = 'MANUAL_REVIEW';
+select subscription_id, delete_state, attempts, retired_attempts, last_failure_code
+from payment.membership_billing_credentials
+where delete_state = 'MANUAL_REVIEW'
+   or (retired_billing_key_cipher is not null and retired_next_at is null);
 
 select id, created_at, attempts, failed_at, last_failure_code
 from payment.outbox_events where failed_at is not null;

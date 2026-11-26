@@ -10,7 +10,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.Instant;
 import java.util.*;
 
-/** 삭제 재시도에도 공급자 확인 전 암호문을 유지합니다. */
+/** 삭제 재시도와 카드 교체 뒤 이전 키 삭제에도 공급자 확인 전 암호문을 유지합니다. */
 public interface MembershipBillingCredentialRepository
         extends JpaRepository<MembershipBillingCredential, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -21,9 +21,10 @@ public interface MembershipBillingCredentialRepository
             value =
                     """
                     select subscription_id from payment.membership_billing_credentials
-                    where delete_state='PENDING' and delete_next_at<=:now
+                    where ((delete_state='PENDING' and delete_next_at<=:now)
+                        or (retired_billing_key_cipher is not null and retired_next_at<=:now))
                       and (lease_until is null or lease_until<=:now)
-                    order by delete_next_at,subscription_id limit 10
+                    order by coalesce(retired_next_at,delete_next_at),subscription_id limit 10
                     """,
             nativeQuery = true)
     List<UUID> findDue(@Param("now") Instant now);

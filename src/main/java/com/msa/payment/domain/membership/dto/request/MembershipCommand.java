@@ -5,11 +5,12 @@ import jakarta.validation.constraints.*;
 import java.time.Instant;
 import java.util.UUID;
 
-/** 계정 서비스가 본인 확인 후 발행하는 세대별 해지 의도입니다. */
+/** 계정 서비스가 본인 확인 후 발행하는 세대별 해지 또는 해지 취소 의도입니다. */
 public record MembershipCommand(
         @NotNull UUID eventId,
         @Min(1) @Max(1) int schemaVersion,
-        @Pattern(regexp = "MEMBERSHIP_CANCEL_REQUESTED") String type,
+        @Pattern(regexp = "MEMBERSHIP_CANCEL_REQUESTED|MEMBERSHIP_CANCEL_WITHDRAW_REQUESTED")
+                String type,
         @NotNull UUID accountId,
         @NotNull UUID subscriptionId,
         @Min(1) long generation,

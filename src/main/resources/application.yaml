@@ -89,8 +89,8 @@ membership:
   plan-version: ${MEMBERSHIP_PLAN_VERSION:monthly-v1}
   terms-version: ${MEMBERSHIP_TERMS_VERSION:recurring-v1}
   provider-key-version: ${MEMBERSHIP_PROVIDER_KEY_VERSION:v1}
-  success-url: ${MEMBERSHIP_SUCCESS_URL:https://stockdrop-app.vercel.app/membership/billing/success}
-  fail-url: ${MEMBERSHIP_FAIL_URL:https://stockdrop-app.vercel.app/membership/billing/fail}
+  success-url: ${MEMBERSHIP_SUCCESS_URL:https://stockdrop-app.vercel.app/#/membership/billing/success}
+  fail-url: ${MEMBERSHIP_FAIL_URL:https://stockdrop-app.vercel.app/#/membership/billing/fail}
   billing:
     enabled: ${MEMBERSHIP_BILLING_ENABLED:false}
     client-key: ${TOSS_BILLING_CLIENT_KEY:}
