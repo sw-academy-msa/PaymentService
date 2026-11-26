@@ -28,9 +28,10 @@ public class MembershipConfig {
     }
 
     private void validate(URI uri, String result, boolean local) {
+        // 프론트는 HashRouter라 해시 경로로 돌아와야 정적 rewrite 없이 화면이 받습니다.
         URI production =
-                URI.create("https://stockdrop-app.vercel.app/membership/billing/" + result);
-        URI development = URI.create("http://localhost:5179/membership/billing/" + result);
+                URI.create("https://stockdrop-app.vercel.app/#/membership/billing/" + result);
+        URI development = URI.create("http://localhost:5179/#/membership/billing/" + result);
         if (!production.equals(uri) && !(local && development.equals(uri)))
             throw new IllegalStateException("멤버십 카드 인증 redirect가 허용 목록과 일치하지 않습니다.");
     }

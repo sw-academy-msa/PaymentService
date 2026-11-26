@@ -16,10 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Clock;
+import java.time.*;
 import java.util.*;
 
-/** HTTP 중 금융 공급자를 호출하지 않고 본인 동의와 암호화 세션만 원자적으로 접수합니다. */
+/** HTTP 중 금융 공급자를 호출하지 않고 본인 동의와 암호화 세션만 원자적으로 접수합니다. 유예 중 카드 교체도 같은 세션으로 받습니다. */
 @Service
 @Transactional(timeout = 5)
 public class MembershipServiceImpl implements MembershipService {
@@ -118,6 +118,20 @@ public class MembershipServiceImpl implements MembershipService {
                             .updatedAt(now)
                             .build();
             em.persist(s);
+        } else if ("GRACE".equals(s.state)) {
+            var credential = credentials.lock(s.id).orElse(null);
+            // 결제 실패 유예 중에는 같은 세대에서 카드만 교체합니다. 진행 중 청구가 있으면 중복 결제를 막습니다.
+            if (!s.autoRenew
+                    || s.graceUntil == null
+                    || !now.isBefore(s.graceUntil)
+                    || attempts.hasUnresolved(s.id)
+                    || sessions.existsBySubscriptionIdAndStateIn(
+                            s.id, List.of("OPEN", "READY", "MANUAL_REVIEW"))
+                    || credential == null
+                    || !"ACTIVE".equals(credential.deleteState)
+                    || credential.billingKeyCipher == null
+                    || credential.retiredBillingKeyCipher != null
+                    || live(credential.leaseUntil)) conflict();
         } else {
             var credential = credentials.lock(s.id).orElse(null);
             if (!Set.of("NONE", "EXPIRED").contains(s.state)
@@ -226,6 +240,10 @@ public class MembershipServiceImpl implements MembershipService {
                 s.expiresAt,
                 policy.successUrl(),
                 policy.failUrl());
+    }
+
+    private boolean live(Instant until) {
+        return until != null && clock.instant().isBefore(until);
     }
 
     private void available() {

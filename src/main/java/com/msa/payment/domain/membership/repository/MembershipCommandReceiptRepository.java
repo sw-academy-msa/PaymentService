@@ -10,4 +10,6 @@ import java.util.UUID;
 public interface MembershipCommandReceiptRepository
         extends JpaRepository<MembershipCommandReceipt, UUID> {
     boolean existsByAccountIdAndCommandVersion(UUID accountId, long commandVersion);
+
+    boolean existsByAccountIdAndCommandVersionGreaterThan(UUID accountId, long commandVersion);
 }

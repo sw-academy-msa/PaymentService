@@ -15,8 +15,9 @@ public record MembershipProperties(
         @DefaultValue("4900") long amount,
         @DefaultValue("monthly-v1") String planVersion,
         @DefaultValue("recurring-v1") String termsVersion,
-        @DefaultValue("https://stockdrop-app.vercel.app/membership/billing/success") URI successUrl,
-        @DefaultValue("https://stockdrop-app.vercel.app/membership/billing/fail") URI failUrl,
+        @DefaultValue("https://stockdrop-app.vercel.app/#/membership/billing/success")
+                URI successUrl,
+        @DefaultValue("https://stockdrop-app.vercel.app/#/membership/billing/fail") URI failUrl,
         @DefaultValue("v1") String providerKeyVersion) {
     @Override
     public String toString() {
