@@ -55,8 +55,10 @@ order by a.created_at;
 select id, subscription_id, state, expires_at
 from payment.membership_auth_sessions where state = 'MANUAL_REVIEW';
 
-select subscription_id, delete_state, attempts, last_failure_code
-from payment.membership_billing_credentials where delete_state = 'MANUAL_REVIEW';
+select subscription_id, delete_state, attempts, retired_attempts, last_failure_code
+from payment.membership_billing_credentials
+where delete_state = 'MANUAL_REVIEW'
+   or (retired_billing_key_cipher is not null and retired_next_at is null);
 
 select id, created_at, attempts, failed_at, last_failure_code
 from payment.outbox_events where failed_at is not null;

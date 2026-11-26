@@ -345,7 +345,8 @@ public class MembershipWorkStoreImpl implements MembershipWorkStore {
                                     s.id, s.generation, cycles.lastNumber(s.id, s.generation))
                             .orElseThrow();
             c = cycles.lock(c.id).orElseThrow();
-            if ("RETRY_WAIT".equals(c.status)) {
+            // 카드 교체 재청구도 정기 청구와 재시도를 합한 최대 4회 안에서만 만듭니다.
+            if ("RETRY_WAIT".equals(c.status) && c.retryNumber < 3) {
                 createAttempt(s, c, c.retryNumber + 1);
                 c.status = "PENDING";
                 c.updatedAt = clock.instant();
@@ -572,10 +573,10 @@ public class MembershipWorkStoreImpl implements MembershipWorkStore {
     private void keepUntilExpiry(MembershipSubscription s) {
         var a = credentials.lock(s.id).orElse(null);
         // 진행 중 청구 뒤 해지 예약이 되면 철회할 수 있도록 삭제 예약을 만료 시점까지 미룹니다.
+        // 현재 키 삭제를 시도한 적이 없으면 이전 키 삭제 임대가 있어도 복원합니다.
         if (a != null
                 && "PENDING".equals(a.deleteState)
                 && a.billingKeyCipher != null
-                && !live(a.leaseUntil)
                 && a.attempts == 0) {
             a.deleteState = "ACTIVE";
             a.deleteNextAt = null;

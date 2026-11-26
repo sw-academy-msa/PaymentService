@@ -309,6 +309,32 @@ class MembershipFlowIntegrationTest extends PaymentDatabaseTestSupport {
     }
 
     @Test
+    void graceCardReplacementIsRejectedAfterAllFourChargesAreUsed() {
+        approve(registered(), start);
+        var due = api.get(account).periodEnd();
+        clock.set(due);
+        store.advance();
+        for (int day = 0; day < 4; day++) {
+            store.complete(
+                    store.claimCharge(),
+                    new BillingReply(Status.DECLINED, null, null, null, "REJECT_CARD_PAYMENT"));
+            if (day < 3) {
+                clock.set(due.plus(Duration.ofDays(day + 1)));
+                store.advance();
+            }
+        }
+        assertThat(api.get(account).state()).isEqualTo("GRACE");
+        assertThatThrownBy(
+                        () ->
+                                api.create(
+                                        account,
+                                        UUID.randomUUID(),
+                                        new MembershipAuthRequest(
+                                                "monthly-v1", "recurring-v1", true)))
+                .isInstanceOf(MembershipException.class);
+    }
+
+    @Test
     void twoWorkersClaimOneRenewalOnce() throws Exception {
         approve(registered(), start);
         clock.set(api.get(account).periodEnd());

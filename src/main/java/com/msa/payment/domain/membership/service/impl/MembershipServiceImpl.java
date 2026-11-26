@@ -27,6 +27,7 @@ public class MembershipServiceImpl implements MembershipService {
     private final MembershipAuthSessionRepository sessions;
     private final MembershipBillingCredentialRepository credentials;
     private final MembershipBillingAttemptRepository attempts;
+    private final MembershipBillingCycleRepository cycles;
     private final EntityManager em;
     private final ObjectProvider<MembershipEncryptionService> encryption;
     private final MembershipProperties policy;
@@ -39,6 +40,7 @@ public class MembershipServiceImpl implements MembershipService {
             MembershipAuthSessionRepository sessions,
             MembershipBillingCredentialRepository credentials,
             MembershipBillingAttemptRepository attempts,
+            MembershipBillingCycleRepository cycles,
             EntityManager em,
             ObjectProvider<MembershipEncryptionService> encryption,
             MembershipProperties policy,
@@ -49,6 +51,7 @@ public class MembershipServiceImpl implements MembershipService {
         this.sessions = sessions;
         this.credentials = credentials;
         this.attempts = attempts;
+        this.cycles = cycles;
         this.em = em;
         this.encryption = encryption;
         this.policy = policy;
@@ -120,11 +123,18 @@ public class MembershipServiceImpl implements MembershipService {
             em.persist(s);
         } else if ("GRACE".equals(s.state)) {
             var credential = credentials.lock(s.id).orElse(null);
+            var cycle =
+                    cycles.findBySubscriptionIdAndGenerationAndCycleNumber(
+                                    s.id, s.generation, cycles.lastNumber(s.id, s.generation))
+                            .orElse(null);
             // 결제 실패 유예 중에는 같은 세대에서 카드만 교체합니다. 진행 중 청구가 있으면 중복 결제를 막습니다.
             if (!s.autoRenew
                     || s.graceUntil == null
                     || !now.isBefore(s.graceUntil)
                     || attempts.hasUnresolved(s.id)
+                    // 정기 청구와 재시도를 합한 최대 4회를 모두 쓴 뒤에는 새 청구를 만들지 않습니다.
+                    || cycle == null
+                    || cycle.retryNumber >= 3
                     || sessions.existsBySubscriptionIdAndStateIn(
                             s.id, List.of("OPEN", "READY", "MANUAL_REVIEW"))
                     || credential == null
@@ -138,7 +148,9 @@ public class MembershipServiceImpl implements MembershipService {
                     || attempts.hasUnresolved(s.id)
                     || sessions.existsBySubscriptionIdAndStateIn(
                             s.id, List.of("OPEN", "READY", "MANUAL_REVIEW"))
-                    || credential != null && !"DELETED".equals(credential.deleteState)) conflict();
+                    || credential != null && !"DELETED".equals(credential.deleteState)
+                    // 이전 세대로 암호화한 교체 전 키가 남아 있으면 세대를 올리지 않습니다.
+                    || credential != null && credential.retiredBillingKeyCipher != null) conflict();
             s.generation = Math.addExact(s.generation, 1);
             s.state = "PENDING";
             s.autoRenew = true;
