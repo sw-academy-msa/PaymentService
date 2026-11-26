@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "STOCKDROP Payment",
-    "description": "공개 API는 BUYER의 SDK 클라이언트 키 조회입니다. 테스트 결제 승인·조회·보상은 Order 전용 Kafka 명령으로 처리합니다.",
+    "description": "BUYER의 구매 SDK 설정과 SELLER 본인의 광고 테스트 결제 조회 및 승인 접수를 제공합니다. 구매 결제는 Order 전용 Kafka 명령으로 처리하며 광고는 별도 회차와 토픽을 사용합니다.",
     "version": "v1"
   },
   "servers": [
@@ -114,6 +114,78 @@
         }
       }
     },
+    "/api/v1/payments/advertising/{id}/completion": {
+      "post": {
+        "tags": [
+          "advertising-controller"
+        ],
+        "summary": "본인 광고 결제 승인 접수",
+        "description": "Idempotency-Key UUID가 필요합니다. 202는 비동기 승인 접수이며 결제 및 심사 완료가 아닙니다. 같은 키의 본문 충돌은 409입니다.",
+        "operationId": "complete_1",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdvertisingCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "승인 접수",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdvertisingPaymentResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "상태 또는 멱등 키 충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdvertisingPaymentResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "금융 처리 미준비",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdvertisingPaymentResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/payments/memberships/me": {
       "get": {
         "tags": [
@@ -169,6 +241,72 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseClientConfigurationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/payments/advertising/{id}": {
+      "get": {
+        "tags": [
+          "advertising-controller"
+        ],
+        "summary": "본인 광고 결제 원본 조회",
+        "description": "PENDING은 확인 중이며 PAID도 상품 심사 접수 완료를 뜻하지 않습니다.",
+        "operationId": "get_1",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdvertisingPaymentResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/payments/advertising/{id}/checkout": {
+      "get": {
+        "tags": [
+          "advertising-controller"
+        ],
+        "summary": "본인 광고 테스트 결제 설정 조회",
+        "description": "서버 확정 금액과 공개 test_ 키를 반환합니다. 상태 충돌은 409, 기능 미준비는 503입니다.",
+        "operationId": "checkout",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdvertisingCheckoutResponse"
                 }
               }
             }
@@ -293,6 +431,92 @@
           },
           "refreshRequired": {
             "type": "boolean"
+          }
+        }
+      },
+      "AdvertisingCompletionRequest": {
+        "type": "object",
+        "properties": {
+          "paymentKey": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0
+          },
+          "tossOrderId": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "AD-[a-f0-9-]{36}"
+          }
+        },
+        "required": [
+          "paymentKey",
+          "tossOrderId"
+        ]
+      },
+      "AdvertisingPaymentResponse": {
+        "type": "object",
+        "properties": {
+          "paymentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "applicationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "paymentStatus": {
+            "type": "string"
+          },
+          "cancellationRequested": {
+            "type": "boolean"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "canceledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resultVersion": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseAdvertisingPaymentResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdvertisingPaymentResponse"
           }
         }
       },
@@ -426,6 +650,62 @@
         "properties": {
           "clientKey": {
             "type": "string"
+          }
+        }
+      },
+      "AdvertisingCheckoutResponse": {
+        "type": "object",
+        "properties": {
+          "paymentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "applicationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tossOrderId": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "clientKey": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "successUrl": {
+            "type": "string"
+          },
+          "failUrl": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseAdvertisingCheckoutResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdvertisingCheckoutResponse"
           }
         }
       }

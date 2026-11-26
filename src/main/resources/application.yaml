@@ -48,6 +48,13 @@ server:
   shutdown: graceful
   forward-headers-strategy: none
 payment:
+  # 신규 접수 중단 후에도 consumer와 processing을 유지해 금융 작업을 drain합니다.
+  advertising:
+    enabled: ${PAYMENT_ADVERTISING_ENABLED:false}
+    consumer-enabled: ${PAYMENT_ADVERTISING_CONSUMER_ENABLED:false}
+    processing-enabled: ${PAYMENT_ADVERTISING_PROCESSING_ENABLED:false}
+    success-url: https://stockdrop-app.vercel.app/#/seller/advertising/toss/success
+    fail-url: https://stockdrop-app.vercel.app/#/seller/advertising/toss/fail
   ga:
     base-url: https://www.google-analytics.com
     allow-insecure-local: false

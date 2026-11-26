@@ -48,6 +48,11 @@ public class TossClientImpl implements TossClient {
     }
 
     public ProviderReply reconcile(PaymentWork work) {
+        return reconcile(TossPaymentRequest.purchase(work));
+    }
+
+    /** 외부 호출은 원본 서비스의 임대 트랜잭션이 끝난 뒤에만 실행합니다. */
+    public ProviderReply reconcile(TossPaymentRequest work) {
         if (!props.enabled()) return ProviderReply.unknown("TOSS_DISABLED");
         // CHECK가 APPROVE보다 먼저 와서 키가 없으면 가맹점 주문번호 조회로 우회하지 않습니다.
         if (work.paymentKey() == null) return ProviderReply.unknown("PAYMENT_KEY_NOT_RECEIVED");
@@ -69,8 +74,8 @@ public class TossClientImpl implements TossClient {
                         request(
                                 "POST",
                                 "/v1/payments/" + path(work.paymentKey()) + "/cancel",
-                                Map.of("cancelReason", "주문 처리 보상 취소"),
-                                "stockdrop-cancel-" + work.attemptId());
+                                Map.of("cancelReason", work.cancellationReason()),
+                                work.cancellationIdempotencyKey());
                 body = validated(response, work);
                 if (body == null) return ProviderReply.unknown("CANCELLATION_RESULT_UNKNOWN");
             }
@@ -81,13 +86,13 @@ public class TossClientImpl implements TossClient {
         }
     }
 
-    private boolean canApprove(PaymentWork work) {
+    private boolean canApprove(TossPaymentRequest work) {
         return work.approvalRequested()
                 && !work.cancellationRequested()
                 && clock.instant().isBefore(work.expiresAt());
     }
 
-    private ProviderReply approved(PaymentWork work) throws Exception {
+    private ProviderReply approved(TossPaymentRequest work) throws Exception {
         // 재전송에서도 body와 멱등 키가 같으며 5분 이후 새 승인을 보내지 않습니다.
         if (!canApprove(work)) return ProviderReply.unknown("APPROVAL_DEADLINE_PASSED");
         var response =
@@ -101,7 +106,7 @@ public class TossClientImpl implements TossClient {
                                 work.tossOrderId(),
                                 "amount",
                                 work.amount()),
-                        "stockdrop-approve-" + work.attemptId());
+                        work.approvalIdempotencyKey());
         var body = validated(response, work);
         if (body != null) return reply(body, work);
         // 토스가 승인 거절을 명시한 오류만 확정하고, 처리 여부가 불명확한 응답은 영속 재조회로 남깁니다.
@@ -129,7 +134,7 @@ public class TossClientImpl implements TossClient {
     }
 
     // 승인되지 않은 결제이므로 승인 시각 없이 거절로 확정하며 원문 메시지는 보관하지 않습니다.
-    private ProviderReply declined(PaymentWork work, String code) {
+    private ProviderReply declined(TossPaymentRequest work, String code) {
         return ProviderReply.builder()
                 .status(Status.DECLINED)
                 .approvedAt(null)
@@ -154,7 +159,7 @@ public class TossClientImpl implements TossClient {
         return http.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
     }
 
-    private Map<?, ?> validated(HttpResponse<byte[]> response, PaymentWork work) {
+    private Map<?, ?> validated(HttpResponse<byte[]> response, TossPaymentRequest work) {
         try {
             if (response.statusCode() != 200 || response.body().length > 2097152) return null;
             Map<?, ?> body = json.readValue(response.body(), Map.class);
@@ -169,7 +174,7 @@ public class TossClientImpl implements TossClient {
         }
     }
 
-    private ProviderReply reply(Map<?, ?> body, PaymentWork work) {
+    private ProviderReply reply(Map<?, ?> body, TossPaymentRequest work) {
         String status = (String) body.get("status");
         Instant approvedAt =
                 body.get("approvedAt") == null

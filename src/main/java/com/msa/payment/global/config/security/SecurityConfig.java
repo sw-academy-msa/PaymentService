@@ -68,7 +68,17 @@ public class SecurityConfig {
                                                 "/swagger-ui/**")
                                         .permitAll();
                             }
-                            // 결제 공개 경로는 예약만 합니다. 컨트롤러·소유권 검증은 업무 구현 시 함께 추가합니다.
+                            // 광고는 판매자 전용 경로만 열며 컨트롤러에서 본인 소유권을 다시 확인합니다.
+                            c.requestMatchers(
+                                            HttpMethod.GET,
+                                            "/api/v1/payments/advertising/{id}",
+                                            "/api/v1/payments/advertising/{id}/checkout")
+                                    .hasRole("SELLER");
+                            c.requestMatchers(
+                                            HttpMethod.POST,
+                                            "/api/v1/payments/advertising/{id}/completion")
+                                    .hasRole("SELLER");
+                            // 구매 결제는 기존 구매자 권한을 유지합니다.
                             c.requestMatchers(
                                             HttpMethod.GET,
                                             "/api/v1/payments",
