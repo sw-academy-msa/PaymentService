@@ -42,8 +42,7 @@ public class MembershipWithdrawalServiceImpl implements MembershipWithdrawalServ
     @Transactional(readOnly = true)
     public long inspect(UUID account) {
         var s = subscriptions.findByAccountId(account).orElse(null);
-        if (s == null) return 0;
-        return pending(s.id);
+        return Math.addExact(s == null ? 0 : pending(s.id), advertisingPending(account));
     }
 
     public long prepare(UUID account, UUID operation) {
@@ -63,6 +62,9 @@ public class MembershipWithdrawalServiceImpl implements MembershipWithdrawalServ
         var fence = fences.lock(operation).orElseThrow(this::conflict);
         if (!fence.accountId.equals(account) || fence.canceled) throw conflict();
         if (fence.finalized) return 0;
+        // 미확정 광고 금융 원본이 있으면 구독이 없는 판매자도 탈퇴를 확정하지 않습니다.
+        long advertisingPending = advertisingPending(account);
+        if (advertisingPending > 0) return advertisingPending;
         if (s != null) {
             long pending = pending(s.id);
             if (pending > 0) return pending;
@@ -128,6 +130,19 @@ public class MembershipWithdrawalServiceImpl implements MembershipWithdrawalServ
                         .setParameter("id", subscription)
                         .getSingleResult();
         return Math.addExact(attempts, sessions);
+    }
+
+    /** 결제 준비부터 취소 확정까지 금융 작업을 고아화하지 않게 탈퇴에 포함합니다. */
+    private long advertisingPending(UUID account) {
+        return em.createQuery(
+                        "select count(p) from AdvertisingPayment p where p.sellerId=:account and"
+                                + " (p.status='PENDING' or (p.status='PAID' and"
+                                + " p.cancellationRequested=true) or (p.leaseUntil is not null and"
+                                + " p.leaseUntil>:now))",
+                        Long.class)
+                .setParameter("account", account)
+                .setParameter("now", clock.instant())
+                .getSingleResult();
     }
 
     private MembershipException conflict() {

@@ -20,8 +20,9 @@ public class OpenApiConfig {
                                 .title("STOCKDROP Payment")
                                 .version("v1")
                                 .description(
-                                        "공개 API는 BUYER의 SDK 클라이언트 키 조회입니다. 테스트 결제 승인·조회·보상은 Order"
-                                                + " 전용 Kafka 명령으로 처리합니다."))
+                                        "BUYER의 구매 SDK 설정과 SELLER 본인의 광고 테스트 결제 조회 및 승인 접수를 제공합니다."
+                                                + " 구매 결제는 Order 전용 Kafka 명령으로 처리하며 광고는 별도 회차와 토픽을"
+                                                + " 사용합니다."))
                 // 기본 진입점은 일반 Gateway이며 직접 서비스 주소는 개발 확인용입니다.
                 .servers(
                         java.util.List.of(
